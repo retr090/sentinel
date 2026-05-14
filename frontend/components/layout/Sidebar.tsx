@@ -113,8 +113,17 @@ export default function Sidebar({
           )
         })()}
 
+        {/* ─── MODULES section label ─── */}
+        <div className={cn(
+          'px-2 pt-3 pb-0.5',
+          'md:hidden',
+          collapsed ? 'lg:hidden' : 'lg:block',
+        )}>
+          <span className="text-[8px] font-mono text-text-muted/50 uppercase tracking-[0.2em] select-none">Modules</span>
+        </div>
+
         {/* ─── Threat Intelligence Group ─── */}
-        <div className="space-y-0.5 pt-1">
+        <div className="space-y-0.5">
           {/* Group label + collapsed icon */}
           <div className={cn(
             'flex items-center gap-2 px-2 py-1',
