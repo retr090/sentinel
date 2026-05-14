@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     HUNTER_IO_KEY: str = ""
     NEWSAPI_KEY: str = ""
     URLHAUS_API_KEY: str = ""
+    VIRUSTOTAL_API_KEY: str = ""
     OPENCAGE_API_KEY: str = ""
     HAVEIBEENPWNED_KEY: str = ""
     SECURITYTRAILS_KEY: str = ""

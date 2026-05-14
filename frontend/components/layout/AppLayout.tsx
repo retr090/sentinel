@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/lib/store'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
@@ -13,15 +13,21 @@ export default function AppLayout({
   children: React.ReactNode
   title?: string
 }) {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
   const router = useRouter()
+  const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated && !localStorage.getItem('access_token')) {
       router.push('/login')
+      return
     }
-  }, [isAuthenticated, router])
+    // Redirect to password change if admin has flagged the account
+    if (user?.force_password_change && pathname !== '/settings/password') {
+      router.push('/settings/password')
+    }
+  }, [isAuthenticated, user, pathname, router])
 
   return (
     <div className="flex min-h-screen bg-background">

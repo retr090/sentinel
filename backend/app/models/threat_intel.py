@@ -8,16 +8,30 @@ class IOC(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     value = Column(String(512), nullable=False, index=True)
-    ioc_type = Column(String(32), nullable=False, index=True)  # ip, domain, hash, url, email
+    ioc_type = Column(String(32), nullable=False, index=True)  # ip, domain, hash_md5/sha1/sha256, url, email, cve
     risk_score = Column(Float, default=0.0)
+    risk_level = Column(String(32), default='clean', nullable=True)  # critical/high/medium/low/clean
     sources = Column(JSON, default=list)
     raw_data = Column(JSON, default=dict)
+    tags = Column(JSON, default=list)
     is_archived = Column(Boolean, default=False)
     analyst_notes = Column(Text)
     first_seen = Column(DateTime(timezone=True), server_default=func.now())
     last_seen = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class IOCBulkJob(Base):
+    __tablename__ = "ioc_bulk_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    status = Column(String(32), default='pending', nullable=False)  # pending/running/completed/failed
+    total = Column(Integer, default=0, nullable=False)
+    processed = Column(Integer, default=0, nullable=False)
+    results = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
 class IOCTag(Base):

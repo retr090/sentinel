@@ -39,6 +39,11 @@ celery_app.conf.update(
             "schedule": 3600,
             "options": {"queue": "feeds"},
         },
+        "refresh-stale-iocs": {
+            "task": "app.tasks.threat_intel.refresh_stale_iocs",
+            "schedule": 86400,
+            "options": {"queue": "feeds"},
+        },
         "scan-dark-web": {
             "task": "app.tasks.dark_web.scan_watchlist",
             "schedule": 7200,

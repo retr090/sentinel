@@ -1,5 +1,5 @@
 from app.models.user import User, AuditLog
-from app.models.threat_intel import IOC, IOCTag, ThreatFeed, FeedItem
+from app.models.threat_intel import IOC, IOCTag, ThreatFeed, FeedItem, IOCBulkJob
 from app.models.dark_web import WatchlistKeyword, DarkWebMention, BreachResult, PasteHit
 from app.models.news import NewsSource, NewsArticle, NewsKeyword, NewsAlert
 from app.models.geoint import GeoItem, AreaOfInterest, GeoAlert
@@ -10,7 +10,7 @@ from app.models.alerts import Alert, AlertAssignment, Report, ReportTemplate, No
 
 __all__ = [
     "User", "AuditLog",
-    "IOC", "IOCTag", "ThreatFeed", "FeedItem",
+    "IOC", "IOCTag", "ThreatFeed", "FeedItem", "IOCBulkJob",
     "WatchlistKeyword", "DarkWebMention", "BreachResult", "PasteHit",
     "NewsSource", "NewsArticle", "NewsKeyword", "NewsAlert",
     "GeoItem", "AreaOfInterest", "GeoAlert",

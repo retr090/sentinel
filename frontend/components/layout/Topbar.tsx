@@ -1,10 +1,30 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Search, User, Menu } from 'lucide-react'
+import Link from 'next/link'
+import { Bell, Search, Menu, LogOut, UserCog, KeyRound } from 'lucide-react'
 import { useAuthStore, useAlertStore } from '@/lib/store'
 import api from '@/lib/api'
+
+function Avatar({ username, avatarUrl, size = 7 }: { username?: string; avatarUrl?: string; size?: number }) {
+  const initials = username?.slice(0, 2).toUpperCase() ?? '??'
+  const sz = `w-${size} h-${size}`
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt="avatar"
+        className={`${sz} rounded-full object-cover border border-accent-green/30 flex-shrink-0`}
+      />
+    )
+  }
+  return (
+    <div className={`${sz} bg-accent-green/20 border border-accent-green/30 rounded-full flex items-center justify-center flex-shrink-0`}>
+      <span className="text-[10px] font-bold font-mono text-accent-green leading-none">{initials}</span>
+    </div>
+  )
+}
 
 export default function Topbar({
   title,
@@ -15,9 +35,21 @@ export default function Topbar({
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const { user } = useAuthStore()
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const { user, logout } = useAuthStore()
   const { unreadCount } = useAlertStore()
   const router = useRouter()
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,11 +57,15 @@ export default function Topbar({
     setSearching(true)
     try {
       const { data } = await api.get(`/dashboard/search?q=${encodeURIComponent(searchQuery)}`)
-      if (data.redirect) {
-        router.push(data.redirect)
-      }
+      if (data.redirect) router.push(data.redirect)
     } catch {}
     setSearching(false)
+  }
+
+  const handleLogout = async () => {
+    try { await api.post('/auth/logout') } catch {}
+    logout()
+    router.push('/login')
   }
 
   return (
@@ -66,7 +102,7 @@ export default function Topbar({
       </form>
 
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-        {/* Live indicator — hidden on mobile */}
+        {/* Live indicator */}
         <div className="hidden sm:flex items-center gap-1.5">
           <div className="live-dot" />
           <span className="text-[10px] font-mono text-text-muted hidden md:block">LIVE</span>
@@ -85,15 +121,47 @@ export default function Topbar({
           )}
         </button>
 
-        {/* User — hidden on mobile */}
-        <div className="hidden sm:flex items-center gap-2 text-sm">
-          <div className="w-7 h-7 bg-accent-green/20 border border-accent-green/30 rounded-full flex items-center justify-center">
-            <User className="w-3.5 h-3.5 text-accent-green" />
-          </div>
-          <div className="hidden md:block">
-            <div className="text-xs font-medium text-text-primary">{user?.username}</div>
-            <div className="text-[10px] text-text-muted font-mono uppercase">{user?.role}</div>
-          </div>
+        {/* User avatar + dropdown */}
+        <div ref={dropdownRef} className="relative">
+          <button
+            onClick={() => setDropdownOpen((o) => !o)}
+            className="flex items-center gap-2 rounded px-1.5 py-1 hover:bg-background/50 transition-colors"
+          >
+            <Avatar username={user?.username} avatarUrl={user?.avatar_url} size={7} />
+            <div className="hidden md:block text-left">
+              <div className="text-xs font-medium text-text-primary leading-tight">{user?.username}</div>
+              <div className="text-[10px] text-text-muted font-mono uppercase leading-tight">{user?.role}</div>
+            </div>
+          </button>
+
+          {dropdownOpen && (
+            <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-lg shadow-2xl z-50 py-1 animate-fade-in">
+              <Link
+                href="/settings/profile"
+                onClick={() => setDropdownOpen(false)}
+                className="flex items-center gap-2.5 px-3 py-2 text-sm text-text-muted hover:text-text-primary hover:bg-background/50 transition-colors"
+              >
+                <UserCog className="w-4 h-4 flex-shrink-0" />
+                Edit Profile
+              </Link>
+              <Link
+                href="/settings/password"
+                onClick={() => setDropdownOpen(false)}
+                className="flex items-center gap-2.5 px-3 py-2 text-sm text-text-muted hover:text-text-primary hover:bg-background/50 transition-colors"
+              >
+                <KeyRound className="w-4 h-4 flex-shrink-0" />
+                Change Password
+              </Link>
+              <div className="border-t border-border my-1" />
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2.5 px-3 py-2 text-sm text-danger hover:bg-danger/10 transition-colors w-full"
+              >
+                <LogOut className="w-4 h-4 flex-shrink-0" />
+                Logout
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

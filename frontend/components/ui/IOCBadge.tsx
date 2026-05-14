@@ -7,11 +7,16 @@ interface IOCBadgeProps {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  ip: 'IP',
+  ip: 'IPv4',
   domain: 'DOMAIN',
   hash: 'HASH',
+  hash_md5: 'MD5',
+  hash_sha1: 'SHA1',
+  hash_sha256: 'SHA256',
   url: 'URL',
   email: 'EMAIL',
+  cve: 'CVE',
+  asn: 'ASN',
 }
 
 export default function IOCBadge({ type, value, className }: IOCBadgeProps) {

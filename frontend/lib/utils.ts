@@ -25,8 +25,13 @@ export const iocTypeColors: Record<string, string> = {
   ip: 'bg-purple-700 text-purple-100',
   domain: 'bg-blue-700 text-blue-100',
   hash: 'bg-slate-700 text-slate-100',
+  hash_md5: 'bg-slate-700 text-slate-100',
+  hash_sha1: 'bg-slate-600 text-slate-100',
+  hash_sha256: 'bg-slate-800 text-slate-100',
   url: 'bg-yellow-700 text-yellow-100',
   email: 'bg-pink-700 text-pink-100',
+  cve: 'bg-red-800 text-red-100',
+  asn: 'bg-teal-700 text-teal-100',
 }
 
 export function formatDate(date: string | null | undefined): string {

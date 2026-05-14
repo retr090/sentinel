@@ -1,48 +1,339 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
-from typing import Optional, List
+import io
+import csv
+import math
 from datetime import datetime, timezone, timedelta
+from typing import Optional, List
+
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, or_
+
 from app.core.database import get_db
 from app.core.security import get_current_user, require_analyst
 from app.models.user import User
-from app.models.threat_intel import IOC, IOCTag, ThreatFeed, FeedItem
-from app.schemas.threat_intel import IOCCreate, IOCOut, FeedItemOut, ThreatFeedOut, IOCBulkImport
+from app.models.threat_intel import IOC, IOCTag, ThreatFeed, FeedItem, IOCBulkJob
+from app.schemas.threat_intel import (
+    IOCCreate, IOCOut, IOCLookupRequest, IOCLookupOut, IOCNotesUpdate,
+    IOCBulkLookupRequest, IOCBulkJobOut,
+    FeedItemOut, ThreatFeedOut, IOCBulkImport, ExportBulkRequest,
+)
 from app.schemas.common import PaginatedResponse
 from app.services.threat_intel import (
-    enrich_ip, enrich_domain, enrich_hash, enrich_url,
-    enrich_email, enrich_cve, enrich_asn, calculate_risk_score
+    detect_ioc_type, enrich_ioc, calculate_risk_score,
+    enrich_ip, enrich_domain, enrich_hash, enrich_url, enrich_email, enrich_cve, enrich_asn,
 )
-import math
 import structlog
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/threat-intel", tags=["threat-intel"])
 
 
-def detect_ioc_type(value: str) -> str:
-    import re
-    ip_re = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
-    hash_re = re.compile(r"^[a-fA-F0-9]{32,64}$")
-    url_re = re.compile(r"^https?://")
-    email_re = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
-    cve_re = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
-    asn_re = re.compile(r"^AS\d+$", re.IGNORECASE)
+# ─────────────────────────────────────────────
+# LOOKUP (new primary endpoint)
+# ─────────────────────────────────────────────
 
-    if ip_re.match(value):
-        return "ip"
-    if hash_re.match(value):
-        return "hash"
-    if url_re.match(value):
-        return "url"
-    if email_re.match(value):
-        return "email"
-    if cve_re.match(value):
-        return "cve"
-    if asn_re.match(value):
-        return "asn"
-    return "domain"
+@router.post("/lookup", response_model=IOCLookupOut)
+async def lookup_ioc(
+    body: IOCLookupRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    value = body.value.strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="IOC value is required")
 
+    ioc_type = detect_ioc_type(value)
+    enrichments = await enrich_ioc(value)
+    risk_score, risk_level = calculate_risk_score(enrichments)
+
+    existing = (await db.execute(select(IOC).where(IOC.value == value))).scalar_one_or_none()
+    if existing:
+        existing.risk_score = risk_score
+        existing.risk_level = risk_level
+        existing.last_seen = datetime.now(timezone.utc)
+        existing.raw_data = enrichments
+        existing.sources = list(enrichments.keys())
+        ioc = existing
+    else:
+        ioc = IOC(
+            value=value,
+            ioc_type=ioc_type,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            raw_data=enrichments,
+            sources=list(enrichments.keys()),
+            created_by=current_user.id,
+        )
+        db.add(ioc)
+        await db.flush()
+        await db.refresh(ioc)
+
+    return IOCLookupOut(
+        ioc=IOCOut.model_validate(ioc),
+        enrichments=enrichments,
+        risk_score=risk_score,
+        risk_level=risk_level,
+    )
+
+
+# ─────────────────────────────────────────────
+# HISTORY
+# ─────────────────────────────────────────────
+
+@router.get("/history", response_model=PaginatedResponse[IOCOut])
+async def get_history(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    type: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(IOC).where(IOC.is_archived == False)
+
+    if type:
+        if type == "hash":
+            query = query.where(
+                or_(IOC.ioc_type == "hash", IOC.ioc_type.like("hash_%"))
+            )
+        else:
+            query = query.where(IOC.ioc_type == type)
+    if risk_level:
+        query = query.where(IOC.risk_level == risk_level)
+    if search:
+        query = query.where(IOC.value.ilike(f"%{search}%"))
+
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar()
+
+    query = query.order_by(IOC.last_seen.desc()).offset((page - 1) * limit).limit(limit)
+    items = (await db.execute(query)).scalars().all()
+
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=limit,
+        pages=math.ceil(total / limit) if total else 1,
+    )
+
+
+# ─────────────────────────────────────────────
+# SINGLE IOC
+# ─────────────────────────────────────────────
+
+@router.get("/ioc/{ioc_id}", response_model=IOCLookupOut)
+async def get_ioc(
+    ioc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ioc = (await db.execute(select(IOC).where(IOC.id == ioc_id, IOC.is_archived == False))).scalar_one_or_none()
+    if not ioc:
+        raise HTTPException(status_code=404, detail="IOC not found")
+    return IOCLookupOut(
+        ioc=IOCOut.model_validate(ioc),
+        enrichments=ioc.raw_data or {},
+        risk_score=ioc.risk_score,
+        risk_level=ioc.risk_level or "clean",
+    )
+
+
+@router.delete("/ioc/{ioc_id}")
+async def archive_ioc(
+    ioc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ioc = (await db.execute(select(IOC).where(IOC.id == ioc_id))).scalar_one_or_none()
+    if not ioc:
+        raise HTTPException(status_code=404, detail="IOC not found")
+    ioc.is_archived = True
+    return {"message": "IOC archived"}
+
+
+@router.patch("/ioc/{ioc_id}/notes")
+async def update_notes(
+    ioc_id: int,
+    body: IOCNotesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ioc = (await db.execute(select(IOC).where(IOC.id == ioc_id))).scalar_one_or_none()
+    if not ioc:
+        raise HTTPException(status_code=404, detail="IOC not found")
+    ioc.analyst_notes = body.notes
+    return {"message": "Notes updated"}
+
+
+# ─────────────────────────────────────────────
+# BULK LOOKUP
+# ─────────────────────────────────────────────
+
+@router.post("/bulk", response_model=IOCBulkJobOut)
+async def start_bulk_lookup(
+    body: IOCBulkLookupRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    iocs = [v.strip() for v in body.iocs if v.strip()]
+    if not iocs:
+        raise HTTPException(status_code=400, detail="No IOC values provided")
+    if len(iocs) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 IOCs per bulk job")
+
+    job = IOCBulkJob(
+        status="pending",
+        total=len(iocs),
+        processed=0,
+        results=[],
+        created_by=current_user.id,
+    )
+    db.add(job)
+    await db.flush()
+    await db.refresh(job)
+
+    import asyncio
+    from app.core.celery_app import celery_app
+    job_id_val = job.id
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: celery_app.send_task(
+            'app.tasks.threat_intel.run_bulk_ioc_lookup',
+            args=[job_id_val, iocs, current_user.id],
+            queue='feeds',
+        )
+    )
+
+    return IOCBulkJobOut.model_validate(job)
+
+
+@router.get("/bulk/{job_id}", response_model=IOCBulkJobOut)
+async def get_bulk_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    job = (await db.execute(select(IOCBulkJob).where(IOCBulkJob.id == job_id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Bulk job not found")
+    return IOCBulkJobOut.model_validate(job)
+
+
+# ─────────────────────────────────────────────
+# EXPORT
+# ─────────────────────────────────────────────
+
+def _ioc_to_csv_row(ioc: IOC) -> list:
+    return [
+        ioc.id,
+        ioc.value,
+        ioc.ioc_type,
+        ioc.risk_score,
+        ioc.risk_level or "clean",
+        ",".join(ioc.sources or []),
+        ioc.analyst_notes or "",
+        ioc.first_seen.isoformat() if ioc.first_seen else "",
+        ioc.last_seen.isoformat() if ioc.last_seen else "",
+    ]
+
+
+CSV_HEADERS = ["id", "value", "type", "risk_score", "risk_level", "sources", "analyst_notes", "first_seen", "last_seen"]
+
+
+@router.get("/export/{ioc_id}")
+async def export_ioc_csv(
+    ioc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ioc = (await db.execute(select(IOC).where(IOC.id == ioc_id))).scalar_one_or_none()
+    if not ioc:
+        raise HTTPException(status_code=404, detail="IOC not found")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(CSV_HEADERS)
+    writer.writerow(_ioc_to_csv_row(ioc))
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="ioc_{ioc_id}.csv"'},
+    )
+
+
+@router.post("/export/bulk")
+async def export_bulk_csv(
+    body: ExportBulkRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="No IDs provided")
+
+    result = await db.execute(select(IOC).where(IOC.id.in_(body.ids)))
+    iocs = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(CSV_HEADERS)
+    for ioc in iocs:
+        writer.writerow(_ioc_to_csv_row(ioc))
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="iocs_export.csv"'},
+    )
+
+
+# ─────────────────────────────────────────────
+# LEGACY SEARCH (kept for backward compat)
+# ─────────────────────────────────────────────
+
+@router.post("/search")
+async def search_ioc(
+    value: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ioc_type = detect_ioc_type(value.strip())
+    enrichments = await enrich_ioc(value.strip())
+    risk_score, risk_level = calculate_risk_score(enrichments)
+
+    existing = (await db.execute(select(IOC).where(IOC.value == value.strip()))).scalar_one_or_none()
+    if existing:
+        existing.risk_score = risk_score
+        existing.risk_level = risk_level
+        existing.last_seen = datetime.now(timezone.utc)
+        existing.raw_data = enrichments
+        existing.sources = list(enrichments.keys())
+        ioc = existing
+    else:
+        ioc = IOC(
+            value=value.strip(),
+            ioc_type=ioc_type,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            raw_data=enrichments,
+            sources=list(enrichments.keys()),
+        )
+        db.add(ioc)
+        await db.flush()
+        await db.refresh(ioc)
+
+    return {"ioc": ioc, "enrichments": enrichments, "risk_score": risk_score}
+
+
+# ─────────────────────────────────────────────
+# IOC CRUD (legacy)
+# ─────────────────────────────────────────────
 
 @router.get("/iocs", response_model=PaginatedResponse[IOCOut])
 async def list_iocs(
@@ -64,7 +355,6 @@ async def list_iocs(
 
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar()
-
     query = query.order_by(IOC.last_seen.desc()).offset((page - 1) * page_size).limit(page_size)
     items = (await db.execute(query)).scalars().all()
 
@@ -73,59 +363,8 @@ async def list_iocs(
         total=total,
         page=page,
         page_size=page_size,
-        pages=math.ceil(total / page_size),
+        pages=math.ceil(total / page_size) if total else 1,
     )
-
-
-@router.post("/search")
-async def search_ioc(
-    value: str = Query(..., description="IP, domain, hash, URL, or email to search"),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    ioc_type = detect_ioc_type(value.strip())
-
-    # Check cache in DB
-    result = await db.execute(select(IOC).where(IOC.value == value.strip()))
-    existing = result.scalar_one_or_none()
-
-    enrichments = {}
-    if ioc_type == "ip":
-        enrichments = await enrich_ip(value.strip())
-    elif ioc_type == "domain":
-        enrichments = await enrich_domain(value.strip())
-    elif ioc_type == "hash":
-        enrichments = await enrich_hash(value.strip())
-    elif ioc_type == "url":
-        enrichments = await enrich_url(value.strip())
-    elif ioc_type == "email":
-        enrichments = await enrich_email(value.strip())
-    elif ioc_type == "cve":
-        enrichments = await enrich_cve(value.strip())
-    elif ioc_type == "asn":
-        enrichments = await enrich_asn(value.strip())
-
-    risk_score = calculate_risk_score(enrichments)
-
-    if existing:
-        existing.risk_score = risk_score
-        existing.last_seen = datetime.now(timezone.utc)
-        existing.raw_data = enrichments
-        existing.sources = list(enrichments.keys())
-        ioc = existing
-    else:
-        ioc = IOC(
-            value=value.strip(),
-            ioc_type=ioc_type,
-            risk_score=risk_score,
-            raw_data=enrichments,
-            sources=list(enrichments.keys()),
-        )
-        db.add(ioc)
-        await db.flush()
-        await db.refresh(ioc)
-
-    return {"ioc": ioc, "enrichments": enrichments, "risk_score": risk_score}
 
 
 @router.post("/iocs", response_model=IOCOut, dependencies=[Depends(require_analyst)])
@@ -153,7 +392,6 @@ async def create_ioc(
 @router.post("/iocs/bulk", dependencies=[Depends(require_analyst)])
 async def bulk_import_iocs(
     body: IOCBulkImport,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -173,7 +411,7 @@ async def bulk_import_iocs(
 
 
 @router.get("/iocs/{ioc_id}", response_model=IOCOut)
-async def get_ioc(
+async def get_ioc_legacy(
     ioc_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -198,6 +436,10 @@ async def update_ioc(
         ioc.analyst_notes = analyst_notes
     return ioc
 
+
+# ─────────────────────────────────────────────
+# FEEDS
+# ─────────────────────────────────────────────
 
 @router.get("/feeds", response_model=List[ThreatFeedOut])
 async def list_feeds(
@@ -228,7 +470,10 @@ async def list_feed_items(
     query = query.order_by(FeedItem.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     items = (await db.execute(query)).scalars().all()
 
-    return PaginatedResponse(items=items, total=total, page=page, page_size=page_size, pages=math.ceil(total / page_size))
+    return PaginatedResponse(
+        items=items, total=total, page=page, page_size=page_size,
+        pages=math.ceil(total / page_size) if total else 1,
+    )
 
 
 @router.post("/feeds/refresh", dependencies=[Depends(require_analyst)])
@@ -246,7 +491,7 @@ async def get_stats(
     since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
     total_iocs = (await db.execute(select(func.count()).select_from(IOC).where(IOC.is_archived == False))).scalar()
     iocs_24h = (await db.execute(select(func.count()).select_from(IOC).where(IOC.created_at >= since_24h))).scalar()
-    critical_iocs = (await db.execute(select(func.count()).select_from(IOC).where(IOC.risk_score >= 75))).scalar()
+    critical_iocs = (await db.execute(select(func.count()).select_from(IOC).where(IOC.risk_score >= 75, IOC.is_archived == False))).scalar()
     feed_items_24h = (await db.execute(select(func.count()).select_from(FeedItem).where(FeedItem.created_at >= since_24h))).scalar()
 
     return {

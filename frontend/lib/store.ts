@@ -7,6 +7,11 @@ interface User {
   email: string
   role: string
   full_name?: string
+  avatar_url?: string
+  force_password_change?: boolean
+  is_active?: boolean
+  last_login?: string
+  created_at?: string
 }
 
 interface AuthStore {

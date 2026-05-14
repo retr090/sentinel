@@ -10,7 +10,7 @@ from app.core.database import init_db
 from app.core.redis import close_redis, get_redis
 from app.core.websocket import manager, redis_subscriber
 
-from app.api import auth, threat_intel, dark_web, news, geoint, profiles, socmint, cyber_surface, alerts, dashboard
+from app.api import auth, threat_intel, dark_web, news, geoint, profiles, socmint, cyber_surface, alerts, dashboard, users, admin_users
 
 logger = structlog.get_logger()
 
@@ -56,6 +56,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Mount all routers
 for router in [
     auth.router,
+    users.router,
+    admin_users.router,
     threat_intel.router,
     dark_web.router,
     news.router,

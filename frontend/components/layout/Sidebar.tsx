@@ -7,15 +7,21 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Shield, Globe, Newspaper, MapPin,
   User, MessageSquare, Monitor, Bell, ChevronLeft, ChevronRight,
-  LogOut, X,
+  LogOut, X, Users, Search, Clock, Layers,
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 
+const THREAT_INTEL_ITEMS = [
+  { href: '/threat-intel/lookup', label: 'IOC Lookup', icon: Search },
+  { href: '/threat-intel/history', label: 'TI History', icon: Clock },
+  { href: '/threat-intel/bulk', label: 'Bulk Lookup', icon: Layers },
+]
+
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/threat-intel', label: 'Threat Intel', icon: Shield },
+  // Threat Intel group rendered inline below
   { href: '/dark-web', label: 'Dark Web', icon: Globe },
   { href: '/news', label: 'News Intel', icon: Newspaper },
   { href: '/geoint', label: 'GEOINT', icon: MapPin },
@@ -43,24 +49,31 @@ export default function Sidebar({
     router.push('/login')
   }
 
+  const tiActive = pathname.startsWith('/threat-intel')
+
+  const linkClass = (active: boolean) => cn(
+    'flex items-center gap-3 px-2 py-2 rounded text-sm transition-colors',
+    'md:justify-center',
+    collapsed ? 'lg:justify-center' : 'lg:justify-start',
+    active
+      ? 'bg-accent-green/10 text-accent-green border border-accent-green/20'
+      : 'text-text-muted hover:text-text-primary hover:bg-background/50',
+  )
+
   return (
     <aside
       className={cn(
         'flex flex-col bg-surface border-r border-border h-screen z-40',
-        // Mobile: fixed off-screen drawer
         'fixed top-0 left-0',
         'transition-[width,transform] duration-300',
         mobileOpen ? 'translate-x-0' : '-translate-x-full',
-        // Tablet+: sticky in flex flow, always visible
         'md:sticky md:top-0 md:translate-x-0',
-        // Width: mobile drawer | tablet icon-only | desktop user-controlled
         'w-64 md:w-16',
         collapsed ? 'lg:w-16' : 'lg:w-56',
       )}
     >
       {/* Logo */}
       <div className="flex items-center border-b border-border h-14 px-3 gap-2 flex-shrink-0">
-        {/* Close button — mobile only */}
         <button
           className="md:hidden p-1 -ml-1 flex-shrink-0 text-text-muted hover:text-text-primary"
           onClick={onClose}
@@ -76,7 +89,6 @@ export default function Sidebar({
           <Shield className="w-4 h-4 text-accent-green" />
         </div>
 
-        {/* SENTINEL text: visible on mobile drawer + lg when expanded */}
         <div className={cn(
           'overflow-hidden',
           'md:hidden',
@@ -89,45 +101,126 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        {/* Dashboard */}
+        {(() => {
+          const { href, label, icon: Icon } = NAV_ITEMS[0]
+          const active = pathname === href
+          return (
+            <Link key={href} href={href} onClick={onClose} className={linkClass(active)} title={label}>
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              <span className={cn('font-medium truncate', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>{label}</span>
+            </Link>
+          )
+        })()}
+
+        {/* ─── Threat Intelligence Group ─── */}
+        <div className="space-y-0.5 pt-1">
+          {/* Group label + collapsed icon */}
+          <div className={cn(
+            'flex items-center gap-2 px-2 py-1',
+            'md:justify-center',
+            collapsed ? 'lg:justify-center' : 'lg:justify-start',
+          )}>
+            {/* Icon (visible on tablet + desktop collapsed, acts as link) */}
+            <Link
+              href="/threat-intel/lookup"
+              onClick={onClose}
+              title="Threat Intel"
+              className={cn(
+                'hidden items-center justify-center w-4 h-4',
+                'md:flex',
+                collapsed ? 'lg:flex' : 'lg:hidden',
+                tiActive ? 'text-accent-green' : 'text-text-muted hover:text-text-primary',
+              )}
+            >
+              <Shield className="w-4 h-4 flex-shrink-0" />
+            </Link>
+
+            {/* Label (visible on mobile + desktop expanded) */}
+            <span className={cn(
+              'text-[9px] font-mono text-text-muted uppercase tracking-widest select-none',
+              'md:hidden',
+              collapsed ? 'lg:hidden' : 'lg:block',
+            )}>
+              Threat Intel
+            </span>
+          </div>
+
+          {/* Sub-items — hidden on tablet, hidden when desktop collapsed */}
+          {THREAT_INTEL_ITEMS.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href || pathname.startsWith(href + '/')
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                title={label}
+                className={cn(
+                  'flex items-center gap-3 px-2 py-1.5 rounded text-sm transition-colors',
+                  'md:hidden',
+                  collapsed ? 'lg:hidden' : 'lg:flex lg:justify-start',
+                  active
+                    ? 'bg-accent-green/10 text-accent-green border border-accent-green/20'
+                    : 'text-text-muted hover:text-text-primary hover:bg-background/50',
+                )}
+              >
+                <span className="w-4 flex-shrink-0" /> {/* indent */}
+                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="font-medium truncate text-xs">{label}</span>
+              </Link>
+            )
+          })}
+        </div>
+
+        {/* Rest of nav items (dark-web onwards) */}
+        {NAV_ITEMS.slice(1).map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + '/')
           return (
             <Link
               key={href}
               href={href}
               onClick={onClose}
+              className={linkClass(active)}
+              title={label}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              <span className={cn('font-medium truncate', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>
+                {label}
+              </span>
+            </Link>
+          )
+        })}
+
+        {/* Admin-only: User Management */}
+        {user?.role === 'admin' && (() => {
+          const active = pathname.startsWith('/admin/users')
+          return (
+            <Link
+              href="/admin/users"
+              onClick={onClose}
               className={cn(
-                'flex items-center gap-3 px-2 py-2 rounded text-sm transition-colors',
-                // Center icon on tablet (icon-only) and lg when collapsed
+                'flex items-center gap-3 px-2 py-2 rounded text-sm transition-colors mt-2 border-t border-border/50 pt-3',
                 'md:justify-center',
                 collapsed ? 'lg:justify-center' : 'lg:justify-start',
                 active
                   ? 'bg-accent-green/10 text-accent-green border border-accent-green/20'
                   : 'text-text-muted hover:text-text-primary hover:bg-background/50',
               )}
-              title={label}
+              title="User Management"
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className={cn(
-                'font-medium truncate',
-                'md:hidden',
-                collapsed ? 'lg:hidden' : 'lg:block',
-              )}>
-                {label}
+              <Users className="w-4 h-4 flex-shrink-0" />
+              <span className={cn('font-medium truncate', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>
+                User Mgmt
               </span>
             </Link>
           )
-        })}
+        })()}
       </nav>
 
       {/* Bottom section */}
       <div className="border-t border-border p-2 space-y-1 flex-shrink-0">
-        {/* User info: mobile + lg expanded only */}
-        <div className={cn(
-          'px-2 py-1.5',
-          'md:hidden',
-          collapsed ? 'lg:hidden' : 'lg:block',
-        )}>
+        {/* User info */}
+        <div className={cn('px-2 py-1.5', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>
           {user && (
             <>
               <div className="text-xs text-text-primary font-medium truncate">{user.username}</div>

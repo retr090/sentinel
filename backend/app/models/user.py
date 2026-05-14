@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
 from sqlalchemy.sql import func
 from app.core.database import Base
 import enum
@@ -18,8 +18,10 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255))
+    avatar_url = Column(Text, nullable=True)
     role = Column(String(32), nullable=False, default="viewer")
     is_active = Column(Boolean, default=True, nullable=False)
+    force_password_change = Column(Boolean, default=False, nullable=False)
     last_login = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
