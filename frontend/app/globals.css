@@ -1,0 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0d0f;
+  --surface: #111518;
+  --border: #1e2730;
+  --accent-green: #00ff88;
+  --accent-blue: #0ea5e9;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --text-primary: #e2e8f0;
+  --text-muted: #64748b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2d3a47;
+}
+
+/* Glow effects */
+.glow-green {
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.glow-red {
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+/* Scanline effect overlay */
+.scanline::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.03) 0px,
+    rgba(0, 0, 0, 0.03) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Table styles */
+.sentinel-table {
+  @apply w-full text-sm;
+}
+.sentinel-table thead tr {
+  @apply border-b border-border;
+}
+.sentinel-table thead th {
+  @apply py-2 px-3 text-left text-text-muted font-medium text-xs uppercase tracking-wider;
+}
+.sentinel-table tbody tr {
+  @apply border-b border-border/50 hover:bg-surface/80 transition-colors;
+}
+.sentinel-table tbody td {
+  @apply py-2.5 px-3;
+}
+
+/* Card styles */
+.sentinel-card {
+  @apply bg-surface border border-border rounded-lg p-4;
+}
+
+/* Input styles */
+.sentinel-input {
+  @apply bg-background border border-border rounded px-3 py-2 text-text-primary text-sm
+         focus:outline-none focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/30
+         placeholder:text-text-muted w-full;
+}
+
+/* Badge animations */
+.badge-pulse {
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Live indicator */
+.live-dot {
+  @apply w-2 h-2 bg-accent-green rounded-full;
+  animation: live-pulse 1.5s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}

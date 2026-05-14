@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    environment:
+      DEBUG: "true"
+
+  celery_worker:
+    command: celery -A app.core.celery_app worker --loglevel=debug --concurrency=2
+
+  celery_beat:
+    command: celery -A app.core.celery_app beat --loglevel=debug --scheduler redbeat.RedBeatScheduler
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000/ws
+    command: npm run dev
