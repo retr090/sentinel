@@ -142,7 +142,8 @@ export default function DarkWebPage() {
         {tab === 'mentions' && (
           <div className="sentinel-card">
             <h2 className="text-sm font-semibold mb-3 font-mono">DARK WEB MENTIONS ({mentions.length})</h2>
-            <table className="sentinel-table">
+            <div className="overflow-x-auto">
+            <table className="sentinel-table min-w-full">
               <thead><tr><th>Keyword</th><th>Source</th><th>Title</th><th>Severity</th><th>Found</th><th></th></tr></thead>
               <tbody>
                 {loading && <tr><td colSpan={6} className="text-center py-8 text-text-muted font-mono text-xs">LOADING...</td></tr>}
@@ -163,6 +164,7 @@ export default function DarkWebPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -170,7 +172,8 @@ export default function DarkWebPage() {
         {tab === 'keywords' && (
           <div className="sentinel-card">
             <h2 className="text-sm font-semibold mb-3 font-mono">WATCHLIST KEYWORDS</h2>
-            <table className="sentinel-table">
+            <div className="overflow-x-auto">
+            <table className="sentinel-table min-w-full">
               <thead><tr><th>Keyword</th><th>Category</th><th>Severity</th><th>Status</th><th>Last Scan</th></tr></thead>
               <tbody>
                 {keywords.map((kw) => (
@@ -184,6 +187,7 @@ export default function DarkWebPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 

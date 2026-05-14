@@ -2,12 +2,17 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Search, User } from 'lucide-react'
+import { Bell, Search, User, Menu } from 'lucide-react'
 import { useAuthStore, useAlertStore } from '@/lib/store'
 import api from '@/lib/api'
-import { cn } from '@/lib/utils'
 
-export default function Topbar({ title }: { title?: string }) {
+export default function Topbar({
+  title,
+  onMenuClick,
+}: {
+  title?: string
+  onMenuClick?: () => void
+}) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const { user } = useAuthStore()
@@ -28,10 +33,18 @@ export default function Topbar({ title }: { title?: string }) {
   }
 
   return (
-    <header className="h-14 border-b border-border bg-surface/80 backdrop-blur-sm flex items-center px-4 gap-4 sticky top-0 z-10">
+    <header className="h-14 border-b border-border bg-surface/80 backdrop-blur-sm flex items-center px-3 gap-3 sticky top-0 z-10 flex-shrink-0">
+      {/* Hamburger — mobile only */}
+      <button
+        className="md:hidden p-1.5 rounded hover:bg-background/50 transition-colors flex-shrink-0"
+        onClick={onMenuClick}
+      >
+        <Menu className="w-5 h-5 text-text-muted" />
+      </button>
+
       {/* Title */}
       {title && (
-        <div className="text-sm font-mono text-text-muted hidden md:block">
+        <div className="text-sm font-mono text-text-muted hidden lg:block flex-shrink-0">
           {title}
         </div>
       )}
@@ -44,7 +57,7 @@ export default function Topbar({ title }: { title?: string }) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search IP, domain, hash, email, keyword..."
+            placeholder="Search IP, domain, hash..."
             className="w-full bg-background border border-border rounded pl-9 pr-4 py-1.5 text-sm font-mono
                        focus:outline-none focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/30
                        placeholder:text-text-muted/60"
@@ -52,11 +65,11 @@ export default function Topbar({ title }: { title?: string }) {
         </div>
       </form>
 
-      <div className="flex items-center gap-3 ml-auto">
-        {/* Live indicator */}
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+        {/* Live indicator — hidden on mobile */}
+        <div className="hidden sm:flex items-center gap-1.5">
           <div className="live-dot" />
-          <span className="text-[10px] font-mono text-text-muted hidden sm:block">LIVE</span>
+          <span className="text-[10px] font-mono text-text-muted hidden md:block">LIVE</span>
         </div>
 
         {/* Alerts bell */}
@@ -72,12 +85,12 @@ export default function Topbar({ title }: { title?: string }) {
           )}
         </button>
 
-        {/* User */}
-        <div className="flex items-center gap-2 text-sm">
+        {/* User — hidden on mobile */}
+        <div className="hidden sm:flex items-center gap-2 text-sm">
           <div className="w-7 h-7 bg-accent-green/20 border border-accent-green/30 rounded-full flex items-center justify-center">
             <User className="w-3.5 h-3.5 text-accent-green" />
           </div>
-          <div className="hidden sm:block">
+          <div className="hidden md:block">
             <div className="text-xs font-medium text-text-primary">{user?.username}</div>
             <div className="text-[10px] text-text-muted font-mono uppercase">{user?.role}</div>
           </div>

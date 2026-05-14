@@ -170,7 +170,8 @@ export default function AlertsPage() {
 
         {tab === 'reports' && (
           <div className="sentinel-card">
-            <table className="sentinel-table">
+            <div className="overflow-x-auto">
+            <table className="sentinel-table min-w-full">
               <thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Generated</th><th></th></tr></thead>
               <tbody>
                 {reports.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-text-muted font-mono text-xs">NO REPORTS GENERATED YET</td></tr>}
@@ -195,6 +196,7 @@ export default function AlertsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

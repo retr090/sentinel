@@ -121,7 +121,8 @@ export default function CyberSurfacePage() {
 
         {tab === 'assets' && (
           <div className="sentinel-card">
-            <table className="sentinel-table">
+            <div className="overflow-x-auto">
+            <table className="sentinel-table min-w-full">
               <thead><tr><th>Asset</th><th>Type</th><th>Grade</th><th>Risk</th><th>Organization</th><th>Last Scan</th><th></th></tr></thead>
               <tbody>
                 {loading && <tr><td colSpan={7} className="text-center py-8 text-text-muted font-mono text-xs">LOADING...</td></tr>}
@@ -155,12 +156,14 @@ export default function CyberSurfacePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
         {tab === 'vulns' && (
           <div className="sentinel-card">
-            <table className="sentinel-table">
+            <div className="overflow-x-auto">
+            <table className="sentinel-table min-w-full">
               <thead><tr><th>CVE</th><th>Title</th><th>Severity</th><th>CVSS</th><th>Service</th><th>Discovered</th></tr></thead>
               <tbody>
                 {loading && <tr><td colSpan={6} className="text-center py-8 text-text-muted font-mono text-xs">LOADING...</td></tr>}
@@ -177,6 +180,7 @@ export default function CyberSurfacePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

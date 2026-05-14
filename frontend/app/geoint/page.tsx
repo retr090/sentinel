@@ -82,14 +82,15 @@ export default function GeoIntPage() {
         </div>
 
         {/* Map */}
-        <div className="sentinel-card p-0 overflow-hidden rounded-lg" style={{ height: '500px' }}>
+        <div className="sentinel-card p-0 overflow-hidden rounded-lg h-[300px] md:h-[450px] lg:h-[500px]">
           <GeoMap items={allMapItems} />
         </div>
 
         {/* Intel pins table */}
         <div className="sentinel-card">
           <h2 className="text-sm font-semibold mb-3 font-mono">INTEL PINS ({geoItems.length})</h2>
-          <table className="sentinel-table">
+          <div className="overflow-x-auto">
+          <table className="sentinel-table min-w-full">
             <thead><tr><th>Title</th><th>Type</th><th>Severity</th><th>Coordinates</th><th>Source</th></tr></thead>
             <tbody>
               {geoItems.slice(0, 20).map((item: any) => (
@@ -109,6 +110,7 @@ export default function GeoIntPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </AppLayout>

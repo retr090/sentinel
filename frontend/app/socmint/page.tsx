@@ -144,7 +144,8 @@ export default function SocmintPage() {
 
         {tab === 'keywords' && (
           <div className="sentinel-card">
-            <table className="sentinel-table">
+            <div className="overflow-x-auto">
+            <table className="sentinel-table min-w-full">
               <thead><tr><th>Keyword</th><th>Platforms</th><th>Status</th><th>Last Scanned</th></tr></thead>
               <tbody>
                 {keywords.map((kw) => (
@@ -157,6 +158,7 @@ export default function SocmintPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
