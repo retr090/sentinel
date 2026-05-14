@@ -5,8 +5,9 @@ import AppLayout from '@/components/layout/AppLayout'
 import api from '@/lib/api'
 import IOCBadge from '@/components/ui/IOCBadge'
 import ThreatScoreRing from '@/components/ui/ThreatScoreRing'
-import { Search, Plus, RefreshCw, Upload, Download, Shield } from 'lucide-react'
+import { Search, RefreshCw, Shield } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
+import EnrichmentCards from '@/components/ui/EnrichmentCards'
 
 interface IOC {
   id: number
@@ -132,30 +133,28 @@ export default function ThreatIntelPage() {
           </form>
 
           {/* Search Result */}
-          {searchResult && (
+          {(searching || searchResult) && (
             <div className="mt-4 border border-border rounded-lg p-4 bg-background/40">
-              <div className="flex items-start gap-4">
-                <ThreatScoreRing score={Math.round(searchResult.risk_score)} />
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 flex-wrap mb-2">
-                    <IOCBadge type={searchResult.ioc.ioc_type} value={searchResult.ioc.value} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 mt-3">
-                    {Object.entries(searchResult.enrichments).map(([source, data]: [string, any]) => (
-                      <div key={source} className="bg-surface rounded p-3">
-                        <div className="text-[10px] font-mono text-accent-green uppercase mb-1">{source}</div>
-                        {data?.error ? (
-                          <span className="text-xs text-text-muted font-mono">No data</span>
-                        ) : (
-                          <pre className="text-[10px] text-text-muted font-mono overflow-hidden max-h-24 text-ellipsis">
-                            {JSON.stringify(data, null, 2).substring(0, 300)}
-                          </pre>
-                        )}
-                      </div>
-                    ))}
+              {searching ? (
+                <div className="flex items-start gap-4">
+                  <div className="w-16 h-16 rounded-full bg-border/40 animate-pulse shrink-0" />
+                  <div className="flex-1">
+                    <div className="h-5 w-36 bg-border/40 rounded animate-pulse mb-1" />
+                    <div className="h-3 w-20 bg-border/30 rounded animate-pulse mb-3" />
+                    <EnrichmentCards enrichments={{}} loading />
                   </div>
                 </div>
-              </div>
+              ) : searchResult && (
+                <div className="flex items-start gap-4">
+                  <ThreatScoreRing score={Math.round(searchResult.risk_score)} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 flex-wrap mb-2">
+                      <IOCBadge type={searchResult.ioc.ioc_type} value={searchResult.ioc.value} />
+                    </div>
+                    <EnrichmentCards enrichments={searchResult.enrichments} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
