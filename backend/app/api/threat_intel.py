@@ -10,7 +10,8 @@ from app.models.threat_intel import IOC, IOCTag, ThreatFeed, FeedItem
 from app.schemas.threat_intel import IOCCreate, IOCOut, FeedItemOut, ThreatFeedOut, IOCBulkImport
 from app.schemas.common import PaginatedResponse
 from app.services.threat_intel import (
-    enrich_ip, enrich_domain, enrich_hash, calculate_risk_score
+    enrich_ip, enrich_domain, enrich_hash, enrich_url,
+    enrich_email, enrich_cve, enrich_asn, calculate_risk_score
 )
 import math
 import structlog
@@ -25,6 +26,8 @@ def detect_ioc_type(value: str) -> str:
     hash_re = re.compile(r"^[a-fA-F0-9]{32,64}$")
     url_re = re.compile(r"^https?://")
     email_re = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
+    cve_re = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
+    asn_re = re.compile(r"^AS\d+$", re.IGNORECASE)
 
     if ip_re.match(value):
         return "ip"
@@ -34,6 +37,10 @@ def detect_ioc_type(value: str) -> str:
         return "url"
     if email_re.match(value):
         return "email"
+    if cve_re.match(value):
+        return "cve"
+    if asn_re.match(value):
+        return "asn"
     return "domain"
 
 
@@ -89,6 +96,14 @@ async def search_ioc(
         enrichments = await enrich_domain(value.strip())
     elif ioc_type == "hash":
         enrichments = await enrich_hash(value.strip())
+    elif ioc_type == "url":
+        enrichments = await enrich_url(value.strip())
+    elif ioc_type == "email":
+        enrichments = await enrich_email(value.strip())
+    elif ioc_type == "cve":
+        enrichments = await enrich_cve(value.strip())
+    elif ioc_type == "asn":
+        enrichments = await enrich_asn(value.strip())
 
     risk_score = calculate_risk_score(enrichments)
 
