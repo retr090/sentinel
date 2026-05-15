@@ -82,6 +82,25 @@ def calculate_risk_score(enrichments: Dict[str, Any]) -> Tuple[float, str]:
             # InternetDB — only CVE IDs, no CVSS
             score += min(len(vulns) * 5, 15)
 
+    xon = enrichments.get("xposedornot", {})
+    if isinstance(xon, dict) and not xon.get("error"):
+        breach_count = xon.get("breach_count", 0)
+        if breach_count > 10:
+            score += 20
+        elif breach_count > 5:
+            score += 14
+        elif breach_count > 0:
+            score += 8
+        if xon.get("paste_count", 0) > 0:
+            score += 5
+        if xon.get("exposed_emails", 0) > 0:
+            score += 5
+
+    lc = enrichments.get("leakcheck", {})
+    if isinstance(lc, dict) and not lc.get("error"):
+        if lc.get("found"):
+            score += min(lc.get("leak_count", 0) * 4, 20)
+
     dns_data = enrichments.get("dns", {})
     if isinstance(dns_data, dict) and not dns_data.get("error"):
         if dns_data.get("disposable"):

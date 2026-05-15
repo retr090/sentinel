@@ -624,6 +624,132 @@ function EmailDNSCard({ data }: { data: any }) {
   )
 }
 
+function XposedOrNotCard({ data, email }: { data: any; email?: string }) {
+  if (!data || data.error) return <CardShell title="XPOSEDORNOT" data={data ?? null} error headerColor="text-orange-400">{null}</CardShell>
+
+  // Domain variant
+  if (data.exposed_emails !== undefined) {
+    return (
+      <CardShell title="XPOSEDORNOT" data={data} headerColor={data.exposed ? 'text-danger' : 'text-accent-green'}>
+        <div className="space-y-1.5">
+          {data.exposed ? (
+            <>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                <Badge label={`${data.breach_count} BREACHES`} variant="red" />
+                <Badge label={`${data.exposed_emails.toLocaleString()} EXPOSED EMAILS`} variant="orange" />
+              </div>
+              {notEmpty(data.first_breach) && <Row label="First Breach">{data.first_breach}</Row>}
+              {notEmpty(data.latest_breach) && <Row label="Latest Breach">{data.latest_breach}</Row>}
+            </>
+          ) : (
+            <Badge label="✓ No domain breach exposure found" variant="green" />
+          )}
+        </div>
+      </CardShell>
+    )
+  }
+
+  // Email variant
+  return (
+    <CardShell title="XPOSEDORNOT" data={data} headerColor={data.exposed ? 'text-danger' : 'text-accent-green'}>
+      <div className="space-y-1.5">
+        {data.exposed ? (
+          <>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              <Badge label={`${data.breach_count} BREACHES`} variant="red" />
+              {data.paste_count > 0 && <Badge label={`${data.paste_count} PASTES`} variant="orange" />}
+            </div>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {(data.breaches ?? []).map((b: any, i: number) => (
+                <div key={i} className="bg-background/60 rounded p-2 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono font-bold text-text-primary">{b.name}</span>
+                    {notEmpty(b.date) && <span className="text-[10px] text-text-muted font-mono">{b.date}</span>}
+                  </div>
+                  {b.records > 0 && (
+                    <div className="text-[10px] text-text-muted font-mono">{b.records.toLocaleString()} records</div>
+                  )}
+                  {b.data_classes?.filter(Boolean).length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {b.data_classes.filter(Boolean).slice(0, 4).map((dc: string, j: number) => (
+                        <span key={j} className="text-[9px] px-1.5 py-0.5 rounded bg-background border border-border text-text-muted font-mono">
+                          {dc.trim()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {email && (
+              <a
+                href={`https://xposedornot.com/xposed/#${encodeURIComponent(email)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] font-mono text-accent-blue hover:text-accent-blue/80 transition-colors mt-1"
+              >
+                View on XposedOrNot <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </>
+        ) : (
+          <Badge label="✓ No breach exposure found" variant="green" />
+        )}
+      </div>
+    </CardShell>
+  )
+}
+
+function LeakCheckCard({ data }: { data: any }) {
+  if (!data || data.error) return <CardShell title="LEAKCHECK" data={data ?? null} error headerColor="text-purple-400">{null}</CardShell>
+  return (
+    <CardShell title="LEAKCHECK" data={data} headerColor={data.found ? 'text-danger' : 'text-accent-green'}>
+      <div className="space-y-1.5">
+        {data.found ? (
+          <>
+            <Badge label={`${data.leak_count} LEAK SOURCES`} variant="red" />
+            {(data.fields ?? []).length > 0 && (
+              <div className="mt-1.5">
+                <span className="text-[10px] font-mono text-text-muted block mb-1">Leaked Fields</span>
+                <div className="flex flex-wrap gap-1">
+                  {data.fields.map((field: string, i: number) => (
+                    <span
+                      key={i}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${
+                        field.toLowerCase().includes('password')
+                          ? 'bg-danger/20 text-danger border-danger/40'
+                          : field.toLowerCase().includes('phone')
+                          ? 'bg-orange-500/10 text-orange-400 border-orange-500/30'
+                          : 'bg-border/50 text-text-muted border-border'
+                      }`}
+                    >
+                      {field}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(data.sources ?? []).length > 0 && (
+              <div className="mt-1">
+                <span className="text-[10px] font-mono text-text-muted block mb-1">Found In</span>
+                <ul className="space-y-0.5 max-h-32 overflow-y-auto">
+                  {data.sources.map((src: string, i: number) => (
+                    <li key={i} className="flex items-center gap-1.5 text-[11px] font-mono text-text-primary">
+                      <span className="text-danger text-[9px]">▸</span>{src}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        ) : (
+          <Badge label="✓ No credential leaks found" variant="green" />
+        )}
+      </div>
+    </CardShell>
+  )
+}
+
 function HunterCard({ data }: { data: any }) {
   if (!data || data.error || Object.keys(data).length === 0) return null
   return (
@@ -646,12 +772,12 @@ function HunterCard({ data }: { data: any }) {
 
 const SOURCES_BY_TYPE: Record<string, string[]> = {
   ip: ['shodan', 'greynoise', 'ipinfo', 'alienvault', 'urlhaus', 'threatfox', 'virustotal', 'abuseipdb'],
-  domain: ['alienvault', 'urlhaus', 'threatfox', 'virustotal'],
+  domain: ['alienvault', 'urlhaus', 'threatfox', 'virustotal', 'xposedornot'],
   hash_md5: ['malwarebazaar', 'threatfox', 'alienvault', 'virustotal'],
   hash_sha1: ['malwarebazaar', 'threatfox', 'alienvault', 'virustotal'],
   hash_sha256: ['malwarebazaar', 'threatfox', 'alienvault', 'virustotal'],
   url: ['urlhaus', 'threatfox', 'virustotal'],
-  email: ['dns', 'hunter'],
+  email: ['dns', 'hunter', 'xposedornot', 'leakcheck'],
   cve: ['circl_cve', 'nvd'],
 }
 
@@ -700,6 +826,8 @@ export default function EnrichmentCards({
       case 'nvd':          return <CVECard key={source} source="nvd" data={data} />
       case 'dns':          return <EmailDNSCard key={source} data={data} />
       case 'hunter':       return <HunterCard key={source} data={data} />
+      case 'xposedornot':  return <XposedOrNotCard key={source} data={data} email={enrichments.dns?.domain ? undefined : undefined} />
+      case 'leakcheck':    return <LeakCheckCard key={source} data={data} />
       default:
         if (!data || (data.error && Object.keys(data).length === 1)) return null
         return (

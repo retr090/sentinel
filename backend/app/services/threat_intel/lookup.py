@@ -7,17 +7,18 @@ from app.services.threat_intel.detector import detect_ioc_type
 from app.services.threat_intel.scorer import calculate_risk_score
 from app.services.threat_intel.sources import (
     greynoise, shodan_idb, ipinfo, alienvault, urlhaus, malwarebazaar, threatfox, virustotal, abuseipdb,
+    xposedornot, leakcheck,
 )
 
 # Sources applicable to each IOC type (used by run_lookup for metadata)
 SOURCE_MAP: Dict[str, list] = {
     "ip":         ["shodan", "greynoise", "ipinfo", "alienvault", "urlhaus", "threatfox", "virustotal", "abuseipdb"],
-    "domain":     ["shodan_dns", "alienvault", "urlhaus", "threatfox", "virustotal"],
+    "domain":     ["shodan_dns", "alienvault", "urlhaus", "threatfox", "virustotal", "xposedornot"],
     "hash_md5":   ["malwarebazaar", "threatfox", "alienvault", "virustotal"],
     "hash_sha1":  ["malwarebazaar", "threatfox", "alienvault", "virustotal"],
     "hash_sha256":["malwarebazaar", "threatfox", "alienvault", "virustotal"],
     "url":        ["urlhaus", "threatfox", "virustotal"],
-    "email":      ["dns", "hunter"],
+    "email":      ["dns", "hunter", "xposedornot", "leakcheck"],
     "cve":        ["circl_cve", "nvd"],
     "asn":        ["ripe", "ipinfo"],
 }
@@ -66,14 +67,16 @@ async def enrich_domain(domain: str) -> Dict[str, Any]:
         urlhaus.lookup_host(domain),
         threatfox.lookup(domain),
         virustotal.lookup_domain(domain),
+        xposedornot.lookup("domain", domain),
         return_exceptions=True,
     )
     enrichment = {
-        "shodan_dns": results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
-        "alienvault": results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
-        "urlhaus":    results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
-        "threatfox":  results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
-        "virustotal": results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])},
+        "shodan_dns":   results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
+        "alienvault":   results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
+        "urlhaus":      results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
+        "threatfox":    results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
+        "virustotal":   results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])},
+        "xposedornot":  results[5] if not isinstance(results[5], Exception) else {"error": str(results[5])},
     }
     await cache_set(cache_key, json.dumps(enrichment), ttl=3600)
     return enrichment
@@ -133,11 +136,15 @@ async def enrich_email(email: str) -> Dict[str, Any]:
     results = await asyncio.gather(
         _query_email_dns(email),
         _query_hunter_email(email),
+        xposedornot.lookup("email", email),
+        leakcheck.lookup(email),
         return_exceptions=True,
     )
     enrichment = {
-        "dns":    results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
-        "hunter": results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
+        "dns":          results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
+        "hunter":       results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
+        "xposedornot":  results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
+        "leakcheck":    results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
     }
     await cache_set(cache_key, json.dumps(enrichment), ttl=3600)
     return enrichment

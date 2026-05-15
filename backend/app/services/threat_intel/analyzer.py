@@ -350,12 +350,68 @@ async def groq_analysis(
                 f"suspicious={stats.get('suspicious',0)}, clean={stats.get('harmless',0)}"
             )
 
+        xon = sources.get("xposedornot", {})
+        if not xon.get("error"):
+            breach_count = xon.get("breach_count", 0)
+            if breach_count > 0:
+                breaches = xon.get("breaches", [])
+                names = [b.get("name", "") for b in breaches[:5] if b.get("name")]
+                all_data: list = []
+                for b in breaches:
+                    all_data.extend(b.get("data_classes", []))
+                unique_data = list(dict.fromkeys(all_data))[:6]
+                source_summary.append(
+                    f"XposedOrNot: email found in {breach_count} data breaches. "
+                    f"Breach sources: {', '.join(names) if names else 'unknown'}. "
+                    f"Exposed data types: {', '.join(unique_data) if unique_data else 'unknown'}"
+                )
+            else:
+                exposed_emails = xon.get("exposed_emails", 0)
+                if exposed_emails > 0:
+                    source_summary.append(
+                        f"XposedOrNot: domain has {exposed_emails} exposed emails across "
+                        f"{xon.get('breach_count', 0)} breaches"
+                    )
+                else:
+                    source_summary.append("XposedOrNot: no breach exposure found")
+
+        lc = sources.get("leakcheck", {})
+        if not lc.get("error"):
+            if lc.get("found"):
+                leak_sources = lc.get("sources", [])
+                fields = lc.get("fields", [])
+                source_summary.append(
+                    f"LeakCheck: credentials found in {lc.get('leak_count', 0)} leak databases. "
+                    f"Sources: {', '.join(leak_sources[:5]) if leak_sources else 'unknown'}. "
+                    f"Leaked fields: {', '.join(fields) if fields else 'unknown'}"
+                )
+            else:
+                source_summary.append("LeakCheck: no credential leaks found")
+
+        ioc_context = ""
+        if ioc_type == "email":
+            ioc_context = """
+EMAIL IOC CONTEXT — focus your analysis on:
+- How many breaches this email was found in and what data was exposed
+- Whether credentials (passwords, tokens) are likely circulating
+- Risk to the organisation if this is a corporate email address
+- Whether the email domain shows signs of targeting
+"""
+        elif ioc_type == "domain" and (xon.get("breach_count", 0) > 0 or xon.get("exposed_emails", 0) > 0):
+            ioc_context = """
+DOMAIN BREACH CONTEXT — this domain has exposed user data. Consider:
+- Scale of credential exposure and breach history
+- Risk of credential stuffing attacks against this domain's users
+- Whether the domain itself may be a target or already compromised
+"""
+
         prompt = f"""You are a senior cybersecurity threat intelligence analyst. Analyse this IOC and provide a concise, actionable intelligence assessment.
 
 IOC VALUE: {value}
 IOC TYPE: {ioc_type}
 RISK SCORE: {score}/100
 RISK LEVEL: {level.upper()}
+{ioc_context}
 
 SOURCE INTELLIGENCE:
 {chr(10).join(f'- {s}' for s in source_summary)}
