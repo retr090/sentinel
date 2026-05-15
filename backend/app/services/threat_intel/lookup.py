@@ -273,10 +273,57 @@ async def _query_circl_cve(cve_id: str) -> Dict:
                 headers={"User-Agent": "SENTINEL-OSINT/1.0"},
             )
             if r.status_code == 200:
-                return r.json()
+                return _normalize_circl_cve(r.json())
         return {}
     except Exception:
         return {"error": "source unavailable"}
+
+
+def _normalize_circl_cve(data: dict) -> dict:
+    """Normalize CIRCL CVE 5.1 format into a flat, consistent shape."""
+    meta = data.get("cveMetadata", {})
+    cna = data.get("containers", {}).get("cna", {})
+    adps = data.get("containers", {}).get("adp", [])
+
+    descriptions = cna.get("descriptions", [])
+    summary = next((d["value"] for d in descriptions if d.get("lang") == "en"), "")
+
+    # CVSS: check CNA metrics first, then each ADP (CISA, NVD, etc.)
+    cvss = cvss_vector = severity = None
+    for source in [cna] + adps:
+        for metric in source.get("metrics", []):
+            for key in ("cvssV3_1", "cvssV3_0", "cvssV2_0"):
+                if key in metric:
+                    m = metric[key]
+                    cvss = m.get("baseScore")
+                    cvss_vector = m.get("vectorString")
+                    severity = m.get("baseSeverity")
+                    break
+            if cvss is not None:
+                break
+        if cvss is not None:
+            break
+
+    affected = [
+        {"vendor": a.get("vendor"), "product": a.get("product")}
+        for a in cna.get("affected", [])[:5]
+    ]
+    references = [
+        ref["url"] for ref in cna.get("references", [])[:5] if ref.get("url")
+    ]
+
+    return {
+        "id": meta.get("cveId"),
+        "title": cna.get("title"),
+        "summary": summary,
+        "cvss": cvss,
+        "cvss_vector": cvss_vector,
+        "severity": severity,
+        "published": meta.get("datePublished"),
+        "updated": meta.get("dateUpdated"),
+        "affected": affected,
+        "references": references,
+    }
 
 
 async def _query_nvd_cve(cve_id: str) -> Dict:
