@@ -24,31 +24,17 @@ async def check_email(email: str) -> dict:
                 return {"error": f"HTTP {r.status_code}"}
 
             data = r.json()
-            exposed = data.get("ExposedBreaches", {})
-            breaches_list = exposed.get("breaches_details", [])
-            breach_count = len(breaches_list)
-
-            breach_info = []
-            for b in breaches_list:
-                breach_info.append({
-                    "name": b.get("breach", ""),
-                    "date": b.get("xposed_date", ""),
-                    "records": b.get("xposed_records", 0),
-                    "data_classes": b.get("xposed_data", "").split(";") if b.get("xposed_data") else [],
-                })
-
-            paste_count = 0
-            metrics = data.get("BreachMetrics", {})
-            if metrics:
-                pastes = metrics.get("pastes", [])
-                if pastes and isinstance(pastes[0], dict):
-                    paste_count = pastes[0].get("cnt", 0)
+            # Public API returns: {"breaches": [["Name1","Name2",...]], "status": "success"}
+            raw = data.get("breaches", [])
+            breach_names = raw[0] if raw and isinstance(raw[0], list) else []
+            breach_count = len(breach_names)
+            breach_info = [{"name": name, "date": "", "records": 0, "data_classes": []} for name in breach_names]
 
             return {
                 "exposed": breach_count > 0,
                 "breach_count": breach_count,
                 "breaches": breach_info[:10],
-                "paste_count": paste_count,
+                "paste_count": 0,
             }
     except Exception as e:
         return {"error": str(e)}

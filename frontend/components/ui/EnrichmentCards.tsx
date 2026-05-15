@@ -733,11 +733,18 @@ function LeakCheckCard({ data }: { data: any }) {
               <div className="mt-1">
                 <span className="text-[10px] font-mono text-text-muted block mb-1">Found In</span>
                 <ul className="space-y-0.5 max-h-32 overflow-y-auto">
-                  {data.sources.map((src: string, i: number) => (
-                    <li key={i} className="flex items-center gap-1.5 text-[11px] font-mono text-text-primary">
-                      <span className="text-danger text-[9px]">▸</span>{src}
-                    </li>
-                  ))}
+                  {data.sources.map((src: any, i: number) => {
+                    const name = typeof src === 'string' ? src : src?.name ?? String(src)
+                    const date = typeof src === 'object' && src?.date ? src.date : null
+                    return (
+                      <li key={i} className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="flex items-center gap-1.5 text-text-primary">
+                          <span className="text-danger text-[9px]">▸</span>{name}
+                        </span>
+                        {date && <span className="text-text-muted text-[10px]">{date}</span>}
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}
