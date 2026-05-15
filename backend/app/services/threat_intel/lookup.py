@@ -280,7 +280,32 @@ async def _query_circl_cve(cve_id: str) -> Dict:
 
 
 def _normalize_circl_cve(data: dict) -> dict:
-    """Normalize CIRCL CVE 5.1 format into a flat, consistent shape."""
+    """Normalize CIRCL response — handles both CVE 5.1 and legacy flat format."""
+    # Legacy format: id, summary, cvss, cvss3 at top level (dataVersion absent)
+    if data.get("dataVersion") is None and data.get("id"):
+        raw_cvss = data.get("cvss3") or data.get("cvss")
+        try:
+            cvss = float(raw_cvss) if raw_cvss is not None else None
+        except (TypeError, ValueError):
+            cvss = None
+        severity = None
+        if cvss is not None:
+            severity = "CRITICAL" if cvss >= 9.0 else "HIGH" if cvss >= 7.0 else "MEDIUM" if cvss >= 4.0 else "LOW"
+        refs = data.get("references") or []
+        return {
+            "id": data.get("id"),
+            "title": None,
+            "summary": data.get("summary") or data.get("details") or "",
+            "cvss": cvss,
+            "cvss_vector": None,
+            "severity": severity,
+            "published": data.get("Published") or data.get("published"),
+            "updated": data.get("Modified") or data.get("modified"),
+            "affected": [],
+            "references": refs[:5] if isinstance(refs[0], str) else [r.get("url") for r in refs[:5] if r.get("url")] if refs else [],
+        }
+
+    # CVE 5.1 format
     meta = data.get("cveMetadata", {})
     cna = data.get("containers", {}).get("cna", {})
     adps = data.get("containers", {}).get("adp", [])
