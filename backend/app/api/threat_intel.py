@@ -49,27 +49,51 @@ async def lookup_ioc(
     risk_score, risk_level = calculate_risk_score(enrichments)
     analysis = await analyse_ioc(ioc_type, value, int(risk_score), risk_level, enrichments)
 
-    existing = (await db.execute(select(IOC).where(IOC.value == value))).scalar_one_or_none()
-    if existing:
-        existing.risk_score = risk_score
-        existing.risk_level = risk_level
-        existing.last_seen = datetime.now(timezone.utc)
-        existing.raw_data = enrichments
-        existing.sources = list(enrichments.keys())
-        ioc = existing
-    else:
-        ioc = IOC(
-            value=value,
-            ioc_type=ioc_type,
-            risk_score=risk_score,
-            risk_level=risk_level,
-            raw_data=enrichments,
-            sources=list(enrichments.keys()),
-            created_by=current_user.id,
-        )
-        db.add(ioc)
-        await db.flush()
-        await db.refresh(ioc)
+    ioc = None
+    try:
+        existing = (await db.execute(select(IOC).where(IOC.value == value))).scalar_one_or_none()
+        if existing:
+            existing.risk_score = risk_score
+            existing.risk_level = risk_level
+            existing.last_seen = datetime.now(timezone.utc)
+            existing.raw_data = enrichments
+            existing.sources = list(enrichments.keys())
+            ioc = existing
+        else:
+            ioc = IOC(
+                value=value,
+                ioc_type=ioc_type,
+                risk_score=risk_score,
+                risk_level=risk_level,
+                raw_data=enrichments,
+                sources=list(enrichments.keys()),
+                created_by=current_user.id,
+            )
+            db.add(ioc)
+            await db.flush()
+            await db.refresh(ioc)
+        await db.commit()
+    except Exception as exc:
+        logger.warning("ioc_db_save_failed", error=str(exc), value=value)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        # Provide a transient fallback so the enrichment result still returns
+        if ioc is None:
+            now = datetime.now(timezone.utc)
+            ioc = IOC(
+                id=0,
+                value=value,
+                ioc_type=ioc_type,
+                risk_score=risk_score,
+                risk_level=risk_level,
+                raw_data=enrichments,
+                sources=list(enrichments.keys()),
+                first_seen=now,
+                last_seen=now,
+                created_at=now,
+            )
 
     return IOCLookupOut(
         ioc=IOCOut.model_validate(ioc),

@@ -388,8 +388,29 @@ async def groq_analysis(
             else:
                 source_summary.append("LeakCheck: no credential leaks found")
 
+        cve_data = sources.get("circl_cve", {})
+        if not cve_data.get("error") and cve_data.get("cve_id"):
+            source_summary.append(
+                f"CIRCL CVE: {cve_data.get('cve_id')} — "
+                f"CVSS {cve_data.get('cvss_score', 'N/A')} "
+                f"({cve_data.get('severity', 'UNKNOWN')}). "
+                f"Summary: {cve_data.get('summary', '')[:200]}. "
+                f"Exploit available: {cve_data.get('exploit_available', False)}. "
+                f"Affected: {', '.join(cve_data.get('vulnerable_products', [])[:3])}"
+            )
+
         ioc_context = ""
-        if ioc_type == "email":
+        if ioc_type == "cve":
+            ioc_context = """
+CVE CONTEXT — focus your analysis on:
+- How severe is this vulnerability (CVSS score and vector)
+- What systems/software are affected and exposure breadth
+- Is there a known exploit available in the wild
+- What is the attack vector (network/local/physical) and complexity
+- What immediate action should the SOC take (patch, mitigate, monitor)
+- Patch urgency level and recommended timeline
+"""
+        elif ioc_type == "email":
             ioc_context = """
 EMAIL IOC CONTEXT — focus your analysis on:
 - How many breaches this email was found in and what data was exposed

@@ -538,33 +538,134 @@ function AbuseIPDBCard({ data, ip }: { data: any; ip?: string }) {
   )
 }
 
-function CVECard({ source, data }: { source: 'circl_cve' | 'nvd'; data: any }) {
-  const title = source === 'circl_cve' ? 'CIRCL CVE' : 'NVD'
-  if (!data || data.error) return <CardShell title={title} data={data ?? null} error>{null}</CardShell>
+function CirclCVECard({ data }: { data: any }) {
+  if (!data || data.error) return <CardShell title="CIRCL CVE" data={data ?? null} error headerColor="text-accent-blue">{null}</CardShell>
   if (Object.keys(data).length === 0) return null
 
-  // CIRCL format: { summary, cvss, references, id }
-  // NVD format: { descriptions, metrics, ... }
-  const summary = data.summary || (data.descriptions?.find((d: any) => d.lang === 'en')?.value)
-  const cvss = data.cvss || (
+  const score: number = data.cvss_score ?? 0
+  const sev: string = data.severity ?? ''
+
+  const sevBg =
+    sev === 'CRITICAL' ? 'bg-danger/20 border-danger/40' :
+    sev === 'HIGH'     ? 'bg-warning/20 border-warning/40' :
+    sev === 'MEDIUM'   ? 'bg-yellow-500/10 border-yellow-500/30' :
+    'bg-border/40 border-border'
+
+  const sevText =
+    sev === 'CRITICAL' ? 'text-danger' :
+    sev === 'HIGH'     ? 'text-warning' :
+    sev === 'MEDIUM'   ? 'text-yellow-400' :
+    'text-text-muted'
+
+  const refs: string[] = data.references ?? []
+  const products: string[] = data.vulnerable_products ?? []
+
+  return (
+    <CardShell title="CIRCL CVE DATABASE" data={data} headerColor="text-danger">
+      {/* Severity banner */}
+      <div className={`flex items-center gap-3 p-2.5 rounded border mb-3 ${sevBg}`}>
+        <span className={`text-2xl font-mono font-bold text-white`}>
+          {score > 0 ? score.toFixed(1) : 'N/A'}
+        </span>
+        <div>
+          <div className={`text-xs font-bold font-mono ${sevText}`}>{sev || 'UNKNOWN'}</div>
+          <div className="text-[10px] text-text-muted font-mono">CVSS Score</div>
+        </div>
+        {data.exploit_available && (
+          <div className="ml-auto px-2 py-1 rounded border bg-danger/20 border-danger/50 text-danger text-[10px] font-mono font-bold animate-pulse">
+            ⚠ EXPLOIT KNOWN
+          </div>
+        )}
+      </div>
+
+      {/* Summary */}
+      {data.summary && (
+        <p className="text-[11px] text-text-primary font-mono leading-relaxed mb-3 line-clamp-4">
+          {data.summary}
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        {/* Details */}
+        <div className="space-y-0.5">
+          {notEmpty(data.cwe) && <Row label="CWE">{data.cwe}</Row>}
+          {data.cvss_v3 != null && <Row label="CVSSv3">{data.cvss_v3}</Row>}
+          {data.cvss_v2 != null && <Row label="CVSSv2">{data.cvss_v2}</Row>}
+          {notEmpty(data.access_vector) && <Row label="Vector">{data.access_vector}</Row>}
+          {notEmpty(data.access_complexity) && <Row label="Complexity">{data.access_complexity}</Row>}
+          {notEmpty(data.published) && (
+            <Row label="Published">
+              {(() => { try { return new Date(data.published).toLocaleDateString() } catch { return data.published } })()}
+            </Row>
+          )}
+          {notEmpty(data.modified) && (
+            <Row label="Modified">
+              {(() => { try { return new Date(data.modified).toLocaleDateString() } catch { return data.modified } })()}
+            </Row>
+          )}
+        </div>
+
+        {/* Affected products */}
+        {products.length > 0 && (
+          <div>
+            <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1.5">
+              Affected Products
+            </div>
+            <div className="space-y-0.5">
+              {products.slice(0, 5).map((p, i) => (
+                <div key={i} className="text-[10px] font-mono text-text-muted truncate">{p}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* References */}
+      {refs.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1.5">
+            References
+          </div>
+          <ul className="space-y-0.5">
+            {refs.slice(0, 4).map((r, i) => (
+              <li key={i}>
+                <a href={r} target="_blank" rel="noopener noreferrer"
+                  className="text-[10px] font-mono text-accent-blue hover:text-accent-blue/80 truncate block">
+                  {r}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </CardShell>
+  )
+}
+
+function NVDCard({ data }: { data: any }) {
+  if (!data || data.error) return <CardShell title="NVD" data={data ?? null} error>{null}</CardShell>
+  if (Object.keys(data).length === 0) return null
+
+  const summary = data.descriptions?.find((d: any) => d.lang === 'en')?.value ?? ''
+  const cvss =
     data.metrics?.cvssMetricV31?.[0]?.cvssData?.baseScore
     ?? data.metrics?.cvssMetricV30?.[0]?.cvssData?.baseScore
     ?? data.metrics?.cvssMetricV2?.[0]?.cvssData?.baseScore
-  )
-  const refs: string[] = data.references ?? []
 
   let cvssColor = 'text-text-muted'
-  if (cvss) {
+  if (cvss != null) {
     const n = parseFloat(String(cvss))
     if (n >= 9) cvssColor = 'text-danger'
     else if (n >= 7) cvssColor = 'text-warning'
     else if (n >= 4) cvssColor = 'text-yellow-400'
   }
 
+  const refs: string[] = (data.references ?? []).slice(0, 3).map((r: any) => typeof r === 'string' ? r : r?.url).filter(Boolean)
+
   return (
-    <CardShell title={title} data={data} headerColor="text-accent-blue">
+    <CardShell title="NVD" data={data} headerColor="text-accent-blue">
       <div className="space-y-1.5">
-        {cvss !== undefined && cvss !== null && (
+        {cvss != null && (
           <div className="flex items-center gap-2">
             <span className="text-text-muted font-mono text-[11px] w-22 shrink-0">CVSS Score</span>
             <span className={`font-mono font-bold text-sm ${cvssColor}`}>{cvss}</span>
@@ -580,17 +681,14 @@ function CVECard({ source, data }: { source: 'circl_cve' | 'nvd'; data: any }) {
           <div className="mt-1">
             <span className="text-[10px] font-mono text-text-muted block mb-1">References</span>
             <ul className="space-y-0.5">
-              {refs.slice(0, 3).map((r: any, i) => {
-                const url = typeof r === 'string' ? r : r.url
-                return url ? (
-                  <li key={i}>
-                    <a href={url} target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] font-mono text-accent-blue hover:text-accent-blue/80 truncate block">
-                      {url}
-                    </a>
-                  </li>
-                ) : null
-              })}
+              {refs.map((url, i) => (
+                <li key={i}>
+                  <a href={url} target="_blank" rel="noopener noreferrer"
+                    className="text-[10px] font-mono text-accent-blue hover:text-accent-blue/80 truncate block">
+                    {url}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
         )}
@@ -829,8 +927,8 @@ export default function EnrichmentCards({
       case 'threatfox':    return <ThreatFoxCard key={source} data={data} />
       case 'virustotal':   return <VirusTotalCard key={source} data={data} />
       case 'abuseipdb':    return <AbuseIPDBCard key={source} data={data} ip={enrichments.abuseipdb?.ip_address} />
-      case 'circl_cve':    return <CVECard key={source} source="circl_cve" data={data} />
-      case 'nvd':          return <CVECard key={source} source="nvd" data={data} />
+      case 'circl_cve':    return <CirclCVECard key={source} data={data} />
+      case 'nvd':          return <NVDCard key={source} data={data} />
       case 'dns':          return <EmailDNSCard key={source} data={data} />
       case 'hunter':       return <HunterCard key={source} data={data} />
       case 'xposedornot':  return <XposedOrNotCard key={source} data={data} email={enrichments.dns?.domain ? undefined : undefined} />

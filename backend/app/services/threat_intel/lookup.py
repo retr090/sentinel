@@ -7,7 +7,7 @@ from app.services.threat_intel.detector import detect_ioc_type
 from app.services.threat_intel.scorer import calculate_risk_score
 from app.services.threat_intel.sources import (
     greynoise, shodan_idb, ipinfo, alienvault, urlhaus, malwarebazaar, threatfox, virustotal, abuseipdb,
-    xposedornot, leakcheck,
+    xposedornot, leakcheck, circl_cve,
 )
 
 # Sources applicable to each IOC type (used by run_lookup for metadata)
@@ -158,7 +158,7 @@ async def enrich_cve(cve_id: str) -> Dict[str, Any]:
         return json.loads(cached)
 
     results = await asyncio.gather(
-        _query_circl_cve(cve_upper),
+        circl_cve.lookup(cve_upper),
         _query_nvd_cve(cve_upper),
         return_exceptions=True,
     )

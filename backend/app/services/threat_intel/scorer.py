@@ -102,7 +102,7 @@ def calculate_risk_score(enrichments: Dict[str, Any]) -> Tuple[float, str]:
             score += min(lc.get("leak_count", 0) * 4, 20)
 
     dns_data = enrichments.get("dns", {})
-    if isinstance(dns_data, dict) and not dns_data.get("error"):
+    if isinstance(dns_data, dict) and not dns_data.get("error") and "has_mx" in dns_data:
         if dns_data.get("disposable"):
             score += 30
         elif not dns_data.get("has_mx"):
@@ -116,20 +116,38 @@ def calculate_risk_score(enrichments: Dict[str, Any]) -> Tuple[float, str]:
         elif status == "risky":
             score += 10
 
-    for cve_data in [enrichments.get("nvd", {}), enrichments.get("circl_cve", {})]:
-        if isinstance(cve_data, dict) and not cve_data.get("error"):
-            try:
-                cvss = (
-                    cve_data.get("cvss")
-                    or (cve_data.get("metrics", {}).get("cvssMetricV31", [{}])[0].get("cvssData", {}).get("baseScore"))
-                    or (cve_data.get("metrics", {}).get("cvssMetricV30", [{}])[0].get("cvssData", {}).get("baseScore"))
-                    or (cve_data.get("metrics", {}).get("cvssMetricV2", [{}])[0].get("cvssData", {}).get("baseScore"))
-                )
-                if cvss is not None:
-                    score += float(cvss) * 10
-                    break
-            except (IndexError, KeyError, TypeError, ValueError):
-                pass
+    # CIRCL CVE (new format with cvss_score key)
+    circl_data = enrichments.get("circl_cve", {})
+    if isinstance(circl_data, dict) and not circl_data.get("error"):
+        try:
+            cvss = float(circl_data.get("cvss_score", 0) or 0)
+            if cvss >= 9.0:
+                score += 80
+            elif cvss >= 7.0:
+                score += 55
+            elif cvss >= 4.0:
+                score += 30
+            elif cvss > 0:
+                score += 10
+            if circl_data.get("exploit_available"):
+                score += 15
+        except (TypeError, ValueError):
+            pass
+
+    # NVD fallback when no circl_cve data
+    nvd_data = enrichments.get("nvd", {})
+    if isinstance(nvd_data, dict) and not nvd_data.get("error") and not circl_data.get("cvss_score"):
+        try:
+            cvss = (
+                nvd_data.get("cvss")
+                or (nvd_data.get("metrics", {}).get("cvssMetricV31", [{}])[0].get("cvssData", {}).get("baseScore"))
+                or (nvd_data.get("metrics", {}).get("cvssMetricV30", [{}])[0].get("cvssData", {}).get("baseScore"))
+                or (nvd_data.get("metrics", {}).get("cvssMetricV2", [{}])[0].get("cvssData", {}).get("baseScore"))
+            )
+            if cvss is not None:
+                score += min(float(cvss) * 10, 100)
+        except (IndexError, KeyError, TypeError, ValueError):
+            pass
 
     score = max(0.0, min(100.0, round(score, 1)))
 
