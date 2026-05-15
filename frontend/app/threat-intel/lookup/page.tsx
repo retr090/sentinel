@@ -7,7 +7,7 @@ import api from '@/lib/api'
 import EnrichmentCards from '@/components/ui/EnrichmentCards'
 import ThreatScoreRing from '@/components/ui/ThreatScoreRing'
 import IOCBadge from '@/components/ui/IOCBadge'
-import { Search, Copy, Download, FileText, Check, AlertCircle, Layers, Play, Clock, CheckCircle } from 'lucide-react'
+import { Search, Copy, Download, FileText, Check, AlertCircle, Layers, Play, Clock, CheckCircle, Cpu } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -58,11 +58,27 @@ interface IOCRecord {
   last_seen: string
 }
 
+interface Analysis {
+  verdict: string
+  category: string
+  summary: string
+  key_findings: string[]
+  recommended_actions: string[]
+  confidence: string
+  sources_flagged: number
+  sources_total: number
+  threat_actor?: string | null
+  mitre_tactics?: string[]
+  generated_by: string
+  model?: string
+}
+
 interface LookupResult {
   ioc: IOCRecord
   enrichments: Record<string, any>
   risk_score: number
   risk_level: string
+  analysis?: Analysis
 }
 
 interface BulkJobResult {
@@ -80,6 +96,130 @@ interface BulkJob {
   total: number
   processed: number
   results: BulkJobResult[]
+}
+
+// ─── Analysis Panel ──────────────────────────
+
+const VERDICT_STYLES: Record<string, { border: string; bg: string; dot: string; text: string }> = {
+  MALICIOUS:    { border: 'border-l-danger',        bg: 'bg-danger/5',        dot: 'bg-danger',        text: 'text-danger' },
+  SUSPICIOUS:   { border: 'border-l-orange-500',    bg: 'bg-orange-500/5',    dot: 'bg-orange-500',    text: 'text-orange-400' },
+  CLEAN:        { border: 'border-l-accent-green',  bg: 'bg-accent-green/5',  dot: 'bg-accent-green',  text: 'text-accent-green' },
+  INCONCLUSIVE: { border: 'border-l-warning',       bg: 'bg-warning/5',       dot: 'bg-warning',       text: 'text-warning' },
+}
+
+const CONFIDENCE_STYLES: Record<string, string> = {
+  HIGH:   'border-danger/50 text-danger',
+  MEDIUM: 'border-warning/50 text-warning',
+  LOW:    'border-border text-text-muted',
+}
+
+function AnalysisSkeleton() {
+  return (
+    <div className="sentinel-card border-l-4 border-l-border animate-pulse">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-2.5 h-2.5 rounded-full bg-border/60" />
+        <div className="h-3.5 w-28 bg-border/60 rounded" />
+        <div className="h-3 w-44 bg-border/40 rounded" />
+      </div>
+      <div className="h-3 w-full bg-border/40 rounded mb-1.5" />
+      <div className="h-3 w-4/5 bg-border/30 rounded mb-4" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => <div key={i} className="h-2.5 bg-border/30 rounded" />)}
+        </div>
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => <div key={i} className="h-2.5 bg-border/30 rounded" />)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AnalysisPanel({ analysis }: { analysis?: Analysis }) {
+  if (!analysis) return <AnalysisSkeleton />
+
+  const styles = VERDICT_STYLES[analysis.verdict] ?? VERDICT_STYLES.INCONCLUSIVE
+  const confStyle = CONFIDENCE_STYLES[analysis.confidence] ?? CONFIDENCE_STYLES.LOW
+
+  return (
+    <div className={cn('sentinel-card border-l-4 space-y-3', styles.border, styles.bg)}>
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', styles.dot)} />
+          <span className={cn('text-sm font-bold font-mono tracking-wider', styles.text)}>
+            {analysis.verdict}
+          </span>
+          <span className="text-sm text-text-muted font-mono">— {analysis.category}</span>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] font-mono flex-wrap">
+          <span className="text-text-muted">
+            {analysis.sources_flagged}/{analysis.sources_total} sources flagged
+          </span>
+          <span className={cn('px-1.5 py-0.5 rounded border', confStyle)}>
+            {analysis.confidence} CONFIDENCE
+          </span>
+          <span className="flex items-center gap-1 text-text-muted/60">
+            <Cpu className="w-3 h-3" />
+            {analysis.generated_by === 'groq_ai' ? `AI · ${analysis.model}` : 'Rule Engine'}
+          </span>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <p className="text-xs text-text-primary font-mono leading-relaxed">{analysis.summary}</p>
+
+      {/* Findings + Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+        <div>
+          <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-2">
+            Key Findings
+          </div>
+          <ul className="space-y-1.5">
+            {analysis.key_findings.map((f, i) => (
+              <li key={i} className="flex items-start gap-2 text-[11px] font-mono text-text-primary">
+                <span className="text-warning mt-0.5 shrink-0">▸</span>
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-2">
+            Recommended Actions
+          </div>
+          <ul className="space-y-1.5">
+            {analysis.recommended_actions.map((a, i) => (
+              <li key={i} className="flex items-start gap-2 text-[11px] font-mono text-text-primary">
+                <span className="text-accent-blue mt-0.5 shrink-0">→</span>
+                {a}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* MITRE tactics */}
+      {(analysis.mitre_tactics ?? []).length > 0 && (
+        <div className="flex items-center gap-2 pt-2 border-t border-border/40 flex-wrap">
+          <span className="text-[10px] font-mono text-text-muted">MITRE ATT&CK:</span>
+          {analysis.mitre_tactics!.map((t, i) => (
+            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border border-border text-text-muted font-mono">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Threat actor */}
+      {analysis.threat_actor && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-text-muted">Threat Actor:</span>
+          <span className="text-[10px] font-mono font-bold text-danger">{analysis.threat_actor}</span>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Single Lookup Tab ───────────────────────
@@ -275,6 +415,9 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
             </div>
           </div>
 
+          {/* AI Analysis */}
+          <AnalysisPanel analysis={result.analysis} />
+
           {/* Source cards */}
           <EnrichmentCards
             enrichments={result.enrichments}
@@ -308,9 +451,12 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
         </>
       )}
 
-      {/* Loading source cards */}
+      {/* Loading analysis + source cards */}
       {isSearching && (
-        <EnrichmentCards enrichments={{}} loading iocType={detectedType} />
+        <>
+          <AnalysisSkeleton />
+          <EnrichmentCards enrichments={{}} loading iocType={detectedType} />
+        </>
       )}
     </div>
   )

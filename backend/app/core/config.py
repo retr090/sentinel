@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     URLHAUS_API_KEY: str = ""
     VIRUSTOTAL_API_KEY: str = ""
     ABUSEIPDB_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
     OPENCAGE_API_KEY: str = ""
     HAVEIBEENPWNED_KEY: str = ""
     SECURITYTRAILS_KEY: str = ""

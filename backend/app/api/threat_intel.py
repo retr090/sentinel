@@ -23,6 +23,7 @@ from app.services.threat_intel import (
     detect_ioc_type, enrich_ioc, calculate_risk_score,
     enrich_ip, enrich_domain, enrich_hash, enrich_url, enrich_email, enrich_cve, enrich_asn,
 )
+from app.services.threat_intel.analyzer import analyse_ioc
 import structlog
 
 logger = structlog.get_logger()
@@ -46,6 +47,7 @@ async def lookup_ioc(
     ioc_type = detect_ioc_type(value)
     enrichments = await enrich_ioc(value)
     risk_score, risk_level = calculate_risk_score(enrichments)
+    analysis = await analyse_ioc(ioc_type, value, int(risk_score), risk_level, enrichments)
 
     existing = (await db.execute(select(IOC).where(IOC.value == value))).scalar_one_or_none()
     if existing:
@@ -74,6 +76,7 @@ async def lookup_ioc(
         enrichments=enrichments,
         risk_score=risk_score,
         risk_level=risk_level,
+        analysis=analysis,
     )
 
 

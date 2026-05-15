@@ -39,6 +39,7 @@ class IOCLookupOut(BaseModel):
     enrichments: Dict[str, Any]
     risk_score: float
     risk_level: str
+    analysis: Optional[Dict[str, Any]] = None
 
 
 class IOCNotesUpdate(BaseModel):
