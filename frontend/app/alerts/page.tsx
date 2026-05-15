@@ -103,9 +103,12 @@ export default function AlertsPage() {
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="sentinel-card w-full max-w-md mx-4">
               <h3 className="text-sm font-semibold mb-4 font-mono">GENERATE INTELLIGENCE REPORT</h3>
-              <form onSubmit={createReport} className="space-y-3">
+              <div className="space-y-3">
                 <input type="text" value={reportForm.title} onChange={e => setReportForm(f => ({ ...f, title: e.target.value }))}
-                  className="sentinel-input" placeholder="Report title" required />
+                  className="sentinel-input" placeholder="Report title" required
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
+                  onKeyDown={(e) => { if (e.key === 'Enter') createReport({ preventDefault: () => {} } as React.FormEvent) }} />
                 <select value={reportForm.report_type} onChange={e => setReportForm(f => ({ ...f, report_type: e.target.value }))}
                   className="sentinel-input">
                   <option value="sitrep">SITREP</option>
@@ -114,9 +117,9 @@ export default function AlertsPage() {
                 </select>
                 <div className="flex gap-2 justify-end pt-2">
                   <button type="button" onClick={() => setShowReportForm(false)} className="text-xs border border-border rounded px-3 py-1.5 hover:bg-surface">Cancel</button>
-                  <button type="submit" className="text-xs bg-accent-green text-background rounded px-3 py-1.5 hover:bg-accent-green/90 font-bold">Generate</button>
+                  <button type="button" onClick={() => createReport({ preventDefault: () => {} } as React.FormEvent)} className="text-xs bg-accent-green text-background rounded px-3 py-1.5 hover:bg-accent-green/90 font-bold">Generate</button>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         )}

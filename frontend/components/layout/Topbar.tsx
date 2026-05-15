@@ -86,7 +86,7 @@ export default function Topbar({
       )}
 
       {/* Search */}
-      <form onSubmit={handleSearch} className="flex-1 max-w-lg">
+      <div className="flex-1 max-w-lg">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
@@ -97,9 +97,18 @@ export default function Topbar({
             className="w-full bg-background border border-border rounded pl-9 pr-4 py-1.5 text-sm font-mono
                        focus:outline-none focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/30
                        placeholder:text-text-muted/60"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSearch({ preventDefault: () => {} } as React.FormEvent) }}
           />
         </div>
-      </form>
+      </div>
 
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
         {/* Live indicator */}

@@ -303,7 +303,7 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
   return (
     <div className="space-y-4">
       {/* Search bar */}
-      <form onSubmit={handleSearch} className="sentinel-card">
+      <div className="sentinel-card">
         <div className="flex gap-2 items-center">
           <div className="relative flex-1">
             <input
@@ -313,6 +313,15 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
               placeholder="IP, domain, MD5/SHA256, URL, email, CVE, ASN..."
               className="sentinel-input font-mono w-full pr-28"
               autoFocus
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSearch({ preventDefault: () => {} } as React.FormEvent) }}
             />
             {detectedType && (
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-accent-blue/10 text-accent-blue border border-accent-blue/30 pointer-events-none">
@@ -321,7 +330,8 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
             )}
           </div>
           <button
-            type="submit"
+            type="button"
+            onClick={() => handleSearch({ preventDefault: () => {} } as React.FormEvent)}
             disabled={isSearching || !searchValue.trim()}
             className="flex items-center gap-2 bg-accent-green text-background px-4 py-2 rounded text-sm font-bold hover:bg-accent-green/90 disabled:opacity-50 transition-colors whitespace-nowrap"
           >
@@ -342,7 +352,7 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
             </button>
           ))}
         </div>
-      </form>
+      </div>
 
       {error && (
         <div className="flex items-center gap-2 text-danger text-xs bg-danger/10 border border-danger/20 rounded px-3 py-2 font-mono">
@@ -436,6 +446,14 @@ function SingleLookupTab({ initialValue }: { initialValue?: string }) {
               rows={3}
               className="sentinel-input w-full resize-none font-mono text-xs"
               placeholder="Add notes for this IOC (stored in database)..."
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
             />
             <div className="flex justify-end">
               <button
@@ -530,7 +548,7 @@ function BulkLookupTab() {
   return (
     <div className="space-y-4">
       {!job ? (
-        <form onSubmit={handleSubmit} className="sentinel-card space-y-3">
+        <div className="sentinel-card space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs font-mono text-text-muted uppercase tracking-wider">IOC List — one per line</label>
             <span className={cn('text-xs font-mono', parsedLines.length >= 50 ? 'text-danger' : 'text-text-muted')}>
@@ -543,6 +561,14 @@ function BulkLookupTab() {
             rows={10}
             className="sentinel-input w-full resize-none font-mono text-xs"
             placeholder={'Paste IOCs here, one per line:\n1.2.3.4\nevil.com\n44d88612fea8a8f36de82e1278abb02f\nhttps://malware.example.com/payload'}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore="true"
+            data-form-type="other"
           />
 
           {parsedLines.length > 0 && (
@@ -568,7 +594,8 @@ function BulkLookupTab() {
 
           <div className="flex justify-end">
             <button
-              type="submit"
+              type="button"
+              onClick={() => handleSubmit({ preventDefault: () => {} } as React.FormEvent)}
               disabled={submitting || !parsedLines.length}
               className="flex items-center gap-2 bg-accent-green text-background font-bold text-sm px-4 py-2 rounded hover:bg-accent-green/90 disabled:opacity-50 transition-colors"
             >
@@ -576,7 +603,7 @@ function BulkLookupTab() {
               {submitting ? 'Starting...' : `Run Bulk Lookup (${parsedLines.length} IOCs)`}
             </button>
           </div>
-        </form>
+        </div>
       ) : (
         <div className="space-y-4">
           {/* Progress */}

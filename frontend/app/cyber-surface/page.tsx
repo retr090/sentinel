@@ -88,9 +88,11 @@ export default function CyberSurfacePage() {
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="sentinel-card w-full max-w-md mx-4">
               <h3 className="text-sm font-semibold mb-4 font-mono">ADD MONITORED ASSET</h3>
-              <form onSubmit={addAsset} className="space-y-3">
+              <div className="space-y-3">
                 <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  className="sentinel-input" placeholder="Asset name (e.g. Air Force Portal)" required />
+                  className="sentinel-input" placeholder="Asset name (e.g. Air Force Portal)" required
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" />
                 <select value={form.asset_type} onChange={e => setForm(f => ({ ...f, asset_type: e.target.value }))}
                   className="sentinel-input">
                   <option value="domain">Domain</option>
@@ -98,14 +100,18 @@ export default function CyberSurfacePage() {
                   <option value="ip_range">IP Range</option>
                 </select>
                 <input type="text" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
-                  className="sentinel-input font-mono" placeholder="domain.lk or 192.168.1.1" required />
+                  className="sentinel-input font-mono" placeholder="domain.lk or 192.168.1.1" required
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" />
                 <input type="text" value={form.organization} onChange={e => setForm(f => ({ ...f, organization: e.target.value }))}
-                  className="sentinel-input" placeholder="Organisation (optional)" />
+                  className="sentinel-input" placeholder="Organisation (optional)"
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" />
                 <div className="flex gap-2 justify-end pt-2">
                   <button type="button" onClick={() => setShowAdd(false)} className="text-xs border border-border rounded px-3 py-1.5 hover:bg-surface">Cancel</button>
-                  <button type="submit" className="text-xs bg-accent-blue text-white rounded px-3 py-1.5 hover:bg-accent-blue/90 font-bold">Add Asset</button>
+                  <button type="button" onClick={() => addAsset({ preventDefault: () => {} } as React.FormEvent)} className="text-xs bg-accent-blue text-white rounded px-3 py-1.5 hover:bg-accent-blue/90 font-bold">Add Asset</button>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         )}

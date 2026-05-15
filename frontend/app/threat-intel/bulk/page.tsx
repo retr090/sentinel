@@ -139,7 +139,7 @@ export default function BulkLookupPage() {
 
         {/* Input form */}
         {!job && (
-          <form onSubmit={handleSubmit} className="sentinel-card space-y-3">
+          <div className="sentinel-card space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-mono text-text-muted uppercase tracking-wider">IOC List</label>
               <span className={`text-xs font-mono ${parsedLines.length >= 50 ? 'text-danger' : 'text-text-muted'}`}>
@@ -152,6 +152,14 @@ export default function BulkLookupPage() {
               rows={12}
               className="sentinel-input w-full resize-none font-mono text-xs"
               placeholder={'Paste IOCs here, one per line:\n1.2.3.4\nevil.com\n44d88612fea8a8f36de82e1278abb02f\nhttps://malware.example.com/payload'}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
             />
 
             {/* Preview list */}
@@ -178,7 +186,8 @@ export default function BulkLookupPage() {
 
             <div className="flex justify-end">
               <button
-                type="submit"
+                type="button"
+                onClick={() => handleSubmit({ preventDefault: () => {} } as React.FormEvent)}
                 disabled={submitting || parsedLines.length === 0}
                 className="flex items-center gap-2 bg-accent-green text-background font-bold text-sm px-4 py-2 rounded hover:bg-accent-green/90 disabled:opacity-50 transition-colors"
               >
@@ -186,7 +195,7 @@ export default function BulkLookupPage() {
                 {submitting ? 'Starting...' : `Start Lookup (${parsedLines.length} IOCs)`}
               </button>
             </div>
-          </form>
+          </div>
         )}
 
         {/* Job status */}

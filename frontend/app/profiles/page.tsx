@@ -93,11 +93,14 @@ export default function ProfilesPage() {
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="sentinel-card w-full max-w-md mx-4">
               <h3 className="text-sm font-semibold mb-4 font-mono">CREATE INTEL PROFILE</h3>
-              <form onSubmit={createProfile} className="space-y-3">
+              <div className="space-y-3">
                 <div>
                   <label className="text-xs text-text-muted mb-1 block">Profile Name</label>
                   <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    className="sentinel-input" placeholder="e.g. example.com, John Doe" required />
+                    className="sentinel-input" placeholder="e.g. example.com, John Doe" required
+                    autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                    data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
+                    onKeyDown={(e) => { if (e.key === 'Enter') createProfile({ preventDefault: () => {} } as React.FormEvent) }} />
                 </div>
                 <div>
                   <label className="text-xs text-text-muted mb-1 block">Type</label>
@@ -109,13 +112,16 @@ export default function ProfilesPage() {
                 <div>
                   <label className="text-xs text-text-muted mb-1 block">Query Value</label>
                   <input type="text" value={form.query_value} onChange={e => setForm(f => ({ ...f, query_value: e.target.value }))}
-                    className="sentinel-input font-mono" placeholder="Domain, IP, email, or name" required />
+                    className="sentinel-input font-mono" placeholder="Domain, IP, email, or name" required
+                    autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                    data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
+                    onKeyDown={(e) => { if (e.key === 'Enter') createProfile({ preventDefault: () => {} } as React.FormEvent) }} />
                 </div>
                 <div className="flex gap-2 justify-end pt-2">
                   <button type="button" onClick={() => setShowCreate(false)} className="text-xs border border-border rounded px-3 py-1.5 hover:bg-surface">Cancel</button>
-                  <button type="submit" className="text-xs bg-accent-green text-background rounded px-3 py-1.5 hover:bg-accent-green/90 font-bold">Create & Enrich</button>
+                  <button type="button" onClick={() => createProfile({ preventDefault: () => {} } as React.FormEvent)} className="text-xs bg-accent-green text-background rounded px-3 py-1.5 hover:bg-accent-green/90 font-bold">Create & Enrich</button>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         )}
@@ -125,7 +131,9 @@ export default function ProfilesPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
             <input type="text" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-              placeholder="Search profiles..." className="sentinel-input pl-8 max-w-xs" />
+              placeholder="Search profiles..." className="sentinel-input pl-8 max-w-xs"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" />
           </div>
           <div className="flex gap-1">
             {TYPES.map((t) => (

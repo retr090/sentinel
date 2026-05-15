@@ -93,7 +93,9 @@ export default function NewsPage() {
         {/* Filters */}
         <div className="flex flex-wrap gap-2">
           <input type="text" value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1) }}
-            placeholder="Filter by keyword..." className="sentinel-input max-w-xs" />
+            placeholder="Filter by keyword..." className="sentinel-input max-w-xs"
+            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+            data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" />
           <div className="flex gap-1">
             {CATEGORIES.map((cat) => (
               <button key={cat} onClick={() => { setCategory(cat); setPage(1) }}

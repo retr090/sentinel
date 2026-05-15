@@ -116,14 +116,17 @@ export default function DarkWebPage() {
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="sentinel-card w-full max-w-md mx-4">
               <h3 className="text-sm font-semibold mb-3 font-mono">ADD WATCHLIST KEYWORD</h3>
-              <form onSubmit={addKeyword} className="space-y-3">
+              <div className="space-y-3">
                 <input type="text" value={newKeyword} onChange={e => setNewKeyword(e.target.value)}
-                  className="sentinel-input" placeholder="e.g. airforce.lk, SLAF, admin.af.mil" autoFocus />
+                  className="sentinel-input" placeholder="e.g. airforce.lk, SLAF, admin.af.mil" autoFocus
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
+                  onKeyDown={(e) => { if (e.key === 'Enter') addKeyword({ preventDefault: () => {} } as React.FormEvent) }} />
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setShowAddForm(false)} className="text-xs border border-border rounded px-3 py-1.5 hover:bg-surface">Cancel</button>
-                  <button type="submit" className="text-xs bg-danger text-white rounded px-3 py-1.5 hover:bg-danger/80">Add</button>
+                  <button type="button" onClick={() => addKeyword({ preventDefault: () => {} } as React.FormEvent)} className="text-xs bg-danger text-white rounded px-3 py-1.5 hover:bg-danger/80">Add</button>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         )}
@@ -195,14 +198,17 @@ export default function DarkWebPage() {
         {tab === 'breach' && (
           <div className="sentinel-card">
             <h2 className="text-sm font-semibold mb-3 font-mono">BREACH DATABASE LOOKUP</h2>
-            <form onSubmit={breachLookup} className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4">
               <input type="text" value={breachQuery} onChange={e => setBreachQuery(e.target.value)}
-                className="sentinel-input font-mono" placeholder="email@domain.com or domain.com" />
-              <button type="submit" disabled={searchingBreach}
+                className="sentinel-input font-mono" placeholder="email@domain.com or domain.com"
+                autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
+                onKeyDown={(e) => { if (e.key === 'Enter') breachLookup({ preventDefault: () => {} } as React.FormEvent) }} />
+              <button type="button" onClick={() => breachLookup({ preventDefault: () => {} } as React.FormEvent)} disabled={searchingBreach}
                 className="flex items-center gap-2 bg-danger text-white px-4 py-2 rounded text-sm hover:bg-danger/90 disabled:opacity-50">
                 <Search className="w-4 h-4" /> {searchingBreach ? 'Searching...' : 'Lookup'}
               </button>
-            </form>
+            </div>
             {breachResult && (
               <div className="mt-4 space-y-3">
                 {breachResult.hibp && breachResult.hibp.length === 0 && (

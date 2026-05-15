@@ -87,14 +87,17 @@ export default function SocmintPage() {
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="sentinel-card w-full max-w-md mx-4">
               <h3 className="text-sm font-semibold mb-3 font-mono">ADD SOCIAL KEYWORD</h3>
-              <form onSubmit={addKeyword} className="space-y-3">
+              <div className="space-y-3">
                 <input type="text" value={newKeyword} onChange={e => setNewKeyword(e.target.value)}
-                  className="sentinel-input" placeholder="e.g. Sri Lanka Air Force, SLAF" autoFocus />
+                  className="sentinel-input" placeholder="e.g. Sri Lanka Air Force, SLAF" autoFocus
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
+                  onKeyDown={(e) => { if (e.key === 'Enter') addKeyword({ preventDefault: () => {} } as React.FormEvent) }} />
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setShowAdd(false)} className="text-xs border border-border rounded px-3 py-1.5 hover:bg-surface">Cancel</button>
-                  <button type="submit" className="text-xs bg-warning text-background rounded px-3 py-1.5 hover:bg-warning/90 font-bold">Add</button>
+                  <button type="button" onClick={() => addKeyword({ preventDefault: () => {} } as React.FormEvent)} className="text-xs bg-warning text-background rounded px-3 py-1.5 hover:bg-warning/90 font-bold">Add</button>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         )}

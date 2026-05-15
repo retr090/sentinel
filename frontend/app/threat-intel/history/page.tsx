@@ -152,18 +152,27 @@ export default function HistoryPage() {
             </select>
 
             {/* Search */}
-            <form onSubmit={applySearch} className="flex gap-1.5 flex-1 min-w-[200px]">
+            <div className="flex gap-1.5 flex-1 min-w-[200px]">
               <input
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Filter by value..."
                 className="sentinel-input text-xs font-mono flex-1 py-1.5"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                onKeyDown={(e) => { if (e.key === 'Enter') applySearch({ preventDefault: () => {} } as React.FormEvent) }}
               />
-              <button type="submit" className="flex items-center gap-1 text-xs border border-border rounded px-2 py-1.5 hover:bg-surface font-mono text-text-muted hover:text-text-primary">
+              <button type="button" onClick={() => applySearch({ preventDefault: () => {} } as React.FormEvent)} className="flex items-center gap-1 text-xs border border-border rounded px-2 py-1.5 hover:bg-surface font-mono text-text-muted hover:text-text-primary">
                 <Search className="w-3.5 h-3.5" />
               </button>
-            </form>
+            </div>
 
             {(filterType || filterRisk || filterSearch) && (
               <button
