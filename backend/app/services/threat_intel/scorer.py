@@ -54,6 +54,23 @@ def calculate_risk_score(enrichments: Dict[str, Any]) -> Tuple[float, str]:
         elif mal > 0:
             score += 10
 
+    ab = enrichments.get("abuseipdb", {})
+    if isinstance(ab, dict) and not ab.get("error"):
+        confidence = ab.get("abuse_confidence_score", 0)
+        if confidence >= 80:
+            score += 30
+        elif confidence >= 50:
+            score += 20
+        elif confidence >= 25:
+            score += 10
+        elif confidence > 0:
+            score += 5
+        reports = ab.get("total_reports", 0)
+        if reports > 100:
+            score += 10
+        elif reports > 10:
+            score += 5
+
     shodan = enrichments.get("shodan", {})
     if isinstance(shodan, dict) and not shodan.get("error"):
         vulns = shodan.get("vulns") or []

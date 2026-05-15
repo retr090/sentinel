@@ -6,12 +6,12 @@ from app.core.redis import cache_get, cache_set
 from app.services.threat_intel.detector import detect_ioc_type
 from app.services.threat_intel.scorer import calculate_risk_score
 from app.services.threat_intel.sources import (
-    greynoise, shodan_idb, ipinfo, alienvault, urlhaus, malwarebazaar, threatfox, virustotal,
+    greynoise, shodan_idb, ipinfo, alienvault, urlhaus, malwarebazaar, threatfox, virustotal, abuseipdb,
 )
 
 # Sources applicable to each IOC type (used by run_lookup for metadata)
 SOURCE_MAP: Dict[str, list] = {
-    "ip":         ["shodan", "greynoise", "ipinfo", "alienvault", "urlhaus", "threatfox", "virustotal"],
+    "ip":         ["shodan", "greynoise", "ipinfo", "alienvault", "urlhaus", "threatfox", "virustotal", "abuseipdb"],
     "domain":     ["shodan_dns", "alienvault", "urlhaus", "threatfox", "virustotal"],
     "hash_md5":   ["malwarebazaar", "threatfox", "alienvault", "virustotal"],
     "hash_sha1":  ["malwarebazaar", "threatfox", "alienvault", "virustotal"],
@@ -37,6 +37,7 @@ async def enrich_ip(ip: str) -> Dict[str, Any]:
         urlhaus.lookup_host(ip),
         threatfox.lookup(ip),
         virustotal.lookup_ip(ip),
+        abuseipdb.lookup(ip),
         return_exceptions=True,
     )
     enrichment = {
@@ -47,6 +48,7 @@ async def enrich_ip(ip: str) -> Dict[str, Any]:
         "urlhaus":    results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])},
         "threatfox":  results[5] if not isinstance(results[5], Exception) else {"error": str(results[5])},
         "virustotal": results[6] if not isinstance(results[6], Exception) else {"error": str(results[6])},
+        "abuseipdb":  results[7] if not isinstance(results[7], Exception) else {"error": str(results[7])},
     }
     await cache_set(cache_key, json.dumps(enrichment), ttl=3600)
     return enrichment

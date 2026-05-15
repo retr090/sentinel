@@ -437,6 +437,107 @@ function VirusTotalCard({ data }: { data: any }) {
   )
 }
 
+const ABUSEIPDB_CATEGORIES: Record<number, string> = {
+  3: 'Fraud', 4: 'DDoS', 5: 'FTP Brute-Force', 6: 'Ping of Death',
+  7: 'Phishing', 8: 'Fraud VoIP', 9: 'Open Proxy', 10: 'Web Spam',
+  11: 'Email Spam', 12: 'Blog Spam', 13: 'VPN IP', 14: 'Port Scan',
+  15: 'Hacking', 16: 'SQL Injection', 17: 'Spoofing', 18: 'Brute-Force',
+  19: 'Bad Web Bot', 20: 'Exploited Host', 21: 'Web App Attack',
+  22: 'SSH Attack', 23: 'IoT Targeted',
+}
+
+function abuseConfidenceBadge(score: number): { label: string; variant: keyof typeof BADGE_VARIANTS } {
+  if (score >= 80) return { label: 'HIGH RISK',   variant: 'red' }
+  if (score >= 50) return { label: 'SUSPICIOUS',  variant: 'orange' }
+  if (score >= 25) return { label: 'LOW RISK',    variant: 'yellow' }
+  if (score > 0)   return { label: 'MINIMAL',     variant: 'blue' }
+  return               { label: 'CLEAN',       variant: 'green' }
+}
+
+function AbuseIPDBCard({ data, ip }: { data: any; ip?: string }) {
+  if (!data) return <CardShell title="ABUSEIPDB" data={null} error>{null}</CardShell>
+  if (data.error === 'no_api_key') {
+    return (
+      <CardShell title="ABUSEIPDB" data={null} headerColor="text-text-muted">
+        <span className="text-xs text-text-muted font-mono">
+          API key not configured — add ABUSEIPDB_API_KEY to .env
+        </span>
+      </CardShell>
+    )
+  }
+  if (data.error) return <CardShell title="ABUSEIPDB" data={data} error>{null}</CardShell>
+
+  const confidence: number = data.abuse_confidence_score ?? 0
+  const totalReports: number = data.total_reports ?? 0
+  const { label: badgeLabel, variant: badgeVariant } = abuseConfidenceBadge(confidence)
+  const reports: any[] = data.reports ?? []
+  const lookupIp = data.ip_address ?? ip
+
+  return (
+    <CardShell title="ABUSEIPDB" data={data} headerColor={confidence >= 50 ? 'text-danger' : confidence >= 25 ? 'text-warning' : 'text-accent-green'}>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted font-mono text-[11px] w-22 shrink-0">Confidence</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono font-bold text-[11px]">{confidence}%</span>
+            <Badge label={badgeLabel} variant={badgeVariant} />
+          </div>
+        </div>
+        {totalReports === 0 ? (
+          <Badge label="✓ No reports found" variant="green" />
+        ) : (
+          <>
+            <Row label="Total Reports">{totalReports}</Row>
+            {notEmpty(data.num_distinct_users) && <Row label="Distinct Users">{data.num_distinct_users}</Row>}
+          </>
+        )}
+        {notEmpty(data.isp) && <Row label="ISP">{data.isp}</Row>}
+        {notEmpty(data.usage_type) && <Row label="Usage Type">{data.usage_type}</Row>}
+        {notEmpty(data.country_code) && <Row label="Country">{data.country_code}</Row>}
+        {notEmpty(data.domain) && <Row label="Domain">{data.domain}</Row>}
+        {data.is_whitelisted !== undefined && data.is_whitelisted !== null && (
+          <div className="flex items-center gap-2 py-0.5">
+            <span className="text-text-muted font-mono text-[11px] w-22 shrink-0">Whitelisted</span>
+            <Badge label={data.is_whitelisted ? 'YES' : 'NO'} variant={data.is_whitelisted ? 'green' : 'muted'} />
+          </div>
+        )}
+        {notEmpty(data.last_reported_at) && <Row label="Last Reported">{new Date(data.last_reported_at).toLocaleString()}</Row>}
+
+        {reports.length > 0 && (
+          <div className="mt-1">
+            <span className="text-[10px] font-mono text-text-muted block mb-1">Recent Reports</span>
+            <ul className="space-y-1">
+              {reports.map((r: any, i: number) => {
+                const cats: number[] = r.categories ?? []
+                const catLabels = cats.map((c) => ABUSEIPDB_CATEGORIES[c] ?? `Cat.${c}`).join(', ')
+                const date = r.reportedAt ? new Date(r.reportedAt).toLocaleDateString() : ''
+                return (
+                  <li key={i} className="text-[10px] font-mono text-text-muted">
+                    {date && <span className="text-text-primary">{date}</span>}
+                    {date && catLabels && ' — '}
+                    {catLabels}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
+        {lookupIp && (
+          <a
+            href={`https://www.abuseipdb.com/check/${lookupIp}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] font-mono text-accent-blue hover:text-accent-blue/80 transition-colors mt-1"
+          >
+            View on AbuseIPDB <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+    </CardShell>
+  )
+}
+
 function CVECard({ source, data }: { source: 'circl_cve' | 'nvd'; data: any }) {
   const title = source === 'circl_cve' ? 'CIRCL CVE' : 'NVD'
   if (!data || data.error) return <CardShell title={title} data={data ?? null} error>{null}</CardShell>
@@ -544,7 +645,7 @@ function HunterCard({ data }: { data: any }) {
 // ─── source → card mapping and ordering ──────
 
 const SOURCES_BY_TYPE: Record<string, string[]> = {
-  ip: ['shodan', 'greynoise', 'ipinfo', 'alienvault', 'urlhaus', 'threatfox', 'virustotal'],
+  ip: ['shodan', 'greynoise', 'ipinfo', 'alienvault', 'urlhaus', 'threatfox', 'virustotal', 'abuseipdb'],
   domain: ['alienvault', 'urlhaus', 'threatfox', 'virustotal'],
   hash_md5: ['malwarebazaar', 'threatfox', 'alienvault', 'virustotal'],
   hash_sha1: ['malwarebazaar', 'threatfox', 'alienvault', 'virustotal'],
@@ -594,6 +695,7 @@ export default function EnrichmentCards({
       case 'malwarebazaar':return <MalwareBazaarCard key={source} data={data} />
       case 'threatfox':    return <ThreatFoxCard key={source} data={data} />
       case 'virustotal':   return <VirusTotalCard key={source} data={data} />
+      case 'abuseipdb':    return <AbuseIPDBCard key={source} data={data} ip={enrichments.abuseipdb?.ip_address} />
       case 'circl_cve':    return <CVECard key={source} source="circl_cve" data={data} />
       case 'nvd':          return <CVECard key={source} source="nvd" data={data} />
       case 'dns':          return <EmailDNSCard key={source} data={data} />
