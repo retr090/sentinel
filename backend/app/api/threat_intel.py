@@ -483,6 +483,85 @@ async def trigger_feed_refresh(background_tasks: BackgroundTasks):
     return {"message": "Feed refresh triggered"}
 
 
+# ─────────────────────────────────────────────
+# SHODAN
+# ─────────────────────────────────────────────
+
+@router.get("/shodan/search")
+async def shodan_search(
+    query: str = Query(..., description="Shodan search query"),
+    page: int = Query(1, ge=1),
+    facets: str = Query("", description="Comma-separated facet list, e.g. country,port"),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.threat_intel.sources import shodan_idb
+    result = await shodan_idb.search(query, page=page, facets=facets)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/shodan/count")
+async def shodan_count(
+    query: str = Query(..., description="Shodan search query"),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.threat_intel.sources import shodan_idb
+    result = await shodan_idb.count(query)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/shodan/domain/{domain}")
+async def shodan_domain(
+    domain: str,
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.threat_intel.sources import shodan_idb
+    result = await shodan_idb.lookup_domain(domain)
+    if not result:
+        raise HTTPException(status_code=404, detail="No Shodan DNS data found for that domain")
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/shodan/host/{ip}")
+async def shodan_host(
+    ip: str,
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.threat_intel.sources import shodan_idb
+    result = await shodan_idb.lookup(ip)
+    if not result:
+        raise HTTPException(status_code=404, detail="No Shodan data found for that IP")
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/shodan/status")
+async def shodan_status(
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.threat_intel.sources import shodan_idb
+    from app.core.config import settings
+    if not settings.SHODAN_API_KEY:
+        return {"configured": False, "plan": None, "query_credits": None, "scan_credits": None}
+    info = await shodan_idb.api_info()
+    if "error" in info:
+        raise HTTPException(status_code=400, detail=info["error"])
+    return {
+        "configured": True,
+        "plan": info.get("plan"),
+        "query_credits": info.get("query_credits"),
+        "scan_credits": info.get("scan_credits"),
+        "https": info.get("https"),
+        "telnet": info.get("telnet"),
+    }
+
+
 @router.get("/stats")
 async def get_stats(
     current_user: User = Depends(get_current_user),

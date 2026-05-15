@@ -57,7 +57,13 @@ def calculate_risk_score(enrichments: Dict[str, Any]) -> Tuple[float, str]:
     shodan = enrichments.get("shodan", {})
     if isinstance(shodan, dict) and not shodan.get("error"):
         vulns = shodan.get("vulns") or []
-        score += min(len(vulns) * 5, 15)
+        if vulns and isinstance(vulns[0], dict) and "cvss" in vulns[0]:
+            # Full Shodan API — score by highest CVSS
+            max_cvss = max((v.get("cvss") or 0 for v in vulns), default=0)
+            score += min(float(max_cvss) * 2, 20) + min(len(vulns) * 1.5, 10)
+        else:
+            # InternetDB — only CVE IDs, no CVSS
+            score += min(len(vulns) * 5, 15)
 
     dns_data = enrichments.get("dns", {})
     if isinstance(dns_data, dict) and not dns_data.get("error"):

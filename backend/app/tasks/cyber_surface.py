@@ -100,13 +100,32 @@ async def _scan_asset_async(asset_id: int):
                 )
                 db.add(alert)
 
-        # Shodan passive check
+        # Shodan passive check (full API when key set, else InternetDB)
         if asset.asset_type in ("domain", "ip"):
             try:
-                shodan_result = await _query_shodan_internetdb(asset.value)
+                from app.services.threat_intel.sources import shodan_idb
+                shodan_result = await shodan_idb.lookup(asset.value)
                 results["shodan"] = shodan_result
-                if shodan_result.get("vulns"):
-                    risk_score += min(len(shodan_result["vulns"]) * 10, 50)
+                vulns = shodan_result.get("vulns") or []
+                if vulns:
+                    if isinstance(vulns[0], dict) and "cvss" in vulns[0]:
+                        # Full API — score by max CVSS and create per-vuln alerts
+                        max_cvss = max((v.get("cvss") or 0 for v in vulns), default=0)
+                        risk_score += min(float(max_cvss) * 3, 40)
+                        for vuln in vulns[:10]:
+                            cvss = vuln.get("cvss") or 0
+                            if cvss >= 7.0:
+                                db.add(AssetAlert(
+                                    asset_id=asset_id,
+                                    scan_id=scan.id,
+                                    alert_type="vulnerability",
+                                    title=f"{vuln['cve']} (CVSS {cvss}) on {asset.value}",
+                                    description=(vuln.get("summary") or "")[:500],
+                                    severity="CRITICAL" if cvss >= 9.0 else "HIGH",
+                                ))
+                    else:
+                        # InternetDB — CVE IDs only
+                        risk_score += min(len(vulns) * 10, 50)
             except Exception:
                 results["shodan"] = {"error": "lookup_failed"}
 

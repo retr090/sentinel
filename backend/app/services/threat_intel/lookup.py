@@ -12,7 +12,7 @@ from app.services.threat_intel.sources import (
 # Sources applicable to each IOC type (used by run_lookup for metadata)
 SOURCE_MAP: Dict[str, list] = {
     "ip":         ["shodan", "greynoise", "ipinfo", "alienvault", "urlhaus", "threatfox", "virustotal"],
-    "domain":     ["alienvault", "urlhaus", "threatfox", "virustotal"],
+    "domain":     ["shodan_dns", "alienvault", "urlhaus", "threatfox", "virustotal"],
     "hash_md5":   ["malwarebazaar", "threatfox", "alienvault", "virustotal"],
     "hash_sha1":  ["malwarebazaar", "threatfox", "alienvault", "virustotal"],
     "hash_sha256":["malwarebazaar", "threatfox", "alienvault", "virustotal"],
@@ -59,6 +59,7 @@ async def enrich_domain(domain: str) -> Dict[str, Any]:
         return json.loads(cached)
 
     results = await asyncio.gather(
+        shodan_idb.lookup_domain(domain),
         alienvault.lookup("domain", domain),
         urlhaus.lookup_host(domain),
         threatfox.lookup(domain),
@@ -66,10 +67,11 @@ async def enrich_domain(domain: str) -> Dict[str, Any]:
         return_exceptions=True,
     )
     enrichment = {
-        "alienvault": results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
-        "urlhaus":    results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
-        "threatfox":  results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
-        "virustotal": results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
+        "shodan_dns": results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
+        "alienvault": results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
+        "urlhaus":    results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
+        "threatfox":  results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
+        "virustotal": results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])},
     }
     await cache_set(cache_key, json.dumps(enrichment), ttl=3600)
     return enrichment
