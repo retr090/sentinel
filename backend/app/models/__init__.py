@@ -1,6 +1,7 @@
 from app.models.user import User, AuditLog
 from app.models.threat_intel import IOC, IOCTag, ThreatFeed, FeedItem, IOCBulkJob
 from app.models.dark_web import WatchlistKeyword, DarkWebMention, BreachResult, PasteHit
+from app.models.darkweb import DarkWebKeyword, DarkWebMention as DWMention, DarkWebScan, DarkWebAlert
 from app.models.news import NewsSource, NewsArticle, NewsKeyword, NewsAlert
 from app.models.geoint import GeoItem, AreaOfInterest, GeoAlert
 from app.models.profile import Profile, ProfileAttribute, ProfileLink, ProfileNote
@@ -18,4 +19,5 @@ __all__ = [
     "SocialKeyword", "SocialPost", "SocialAccount", "SocialAlert",
     "MonitoredAsset", "AssetScan", "AssetVulnerability", "AssetAlert",
     "Alert", "AlertAssignment", "Report", "ReportTemplate", "NotificationConfig",
+    "DarkWebKeyword", "DWMention", "DarkWebScan", "DarkWebAlert",
 ]

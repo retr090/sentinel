@@ -11,6 +11,7 @@ from app.core.redis import close_redis, get_redis
 from app.core.websocket import manager, redis_subscriber
 
 from app.api import auth, threat_intel, dark_web, news, geoint, profiles, socmint, cyber_surface, alerts, dashboard, users, admin_users
+from app.api import darkweb
 
 logger = structlog.get_logger()
 
@@ -67,6 +68,7 @@ for router in [
     cyber_surface.router,
     alerts.router,
     dashboard.router,
+    darkweb.router,
 ]:
     app.include_router(router, prefix="/api")
 

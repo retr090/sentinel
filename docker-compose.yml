@@ -86,7 +86,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2 -Q celery,feeds,scans,alerts
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2 -Q celery,feeds,scans,alerts,darkweb
 
   celery_beat:
     build:

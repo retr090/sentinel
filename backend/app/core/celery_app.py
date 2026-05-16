@@ -11,6 +11,7 @@ celery_app = Celery(
     include=[
         "app.tasks.threat_intel",
         "app.tasks.dark_web",
+        "app.tasks.darkweb_tasks",
         "app.tasks.news",
         "app.tasks.geoint",
         "app.tasks.socmint",
@@ -68,6 +69,26 @@ celery_app.conf.update(
             "task": "app.tasks.alerts.archive_old_data",
             "schedule": 86400,
             "options": {"queue": "alerts"},
+        },
+        "scan-ransomware-live": {
+            "task": "app.tasks.darkweb_tasks.scan_ransomware_live",
+            "schedule": 900.0,
+            "options": {"queue": "darkweb", "expires": 840},
+        },
+        "scan-rss-feeds": {
+            "task": "app.tasks.darkweb_tasks.scan_rss_feeds",
+            "schedule": 1800.0,
+            "options": {"queue": "darkweb", "expires": 1740},
+        },
+        "scan-paste-sites": {
+            "task": "app.tasks.darkweb_tasks.scan_paste_sites",
+            "schedule": 7200.0,
+            "options": {"queue": "darkweb", "expires": 7140},
+        },
+        "scan-dark-web-search": {
+            "task": "app.tasks.darkweb_tasks.scan_dark_web_search",
+            "schedule": 21600.0,
+            "options": {"queue": "darkweb", "expires": 21540},
         },
     },
 )
