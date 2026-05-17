@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import AppLayout from '@/components/layout/AppLayout'
 import api from '@/lib/api'
 
@@ -266,13 +266,12 @@ const AnalystNoteEditor = ({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'watchlist' | 'mentions' | 'ransomware' | 'search' | 'scans' | 'forums'
+type Tab = 'overview' | 'watchlist' | 'ransomware' | 'search' | 'scans' | 'forums'
 
 export default function DarkWebMonitor() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [stats, setStats] = useState<any>(null)
   const [keywords, setKeywords] = useState<any[]>([])
-  const [mentions, setMentions] = useState<any[]>([])
   const [scans, setScans] = useState<any[]>([])
   const [ransomware, setRansomware] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -297,11 +296,20 @@ export default function DarkWebMonitor() {
   const [selectedMention, setSelectedMention] = useState<any>(null)
   const [forumScanning, setForumScanning] = useState(false)
 
+  // Live countdown tick
+  const [now, setNow] = useState(Date.now())
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    tickRef.current = setInterval(() => setNow(Date.now()), 30000)
+    return () => { if (tickRef.current) clearInterval(tickRef.current) }
+  }, [])
+
   useEffect(() => { loadAll() }, [])
 
   const loadAll = async () => {
     setLoading(true)
-    await Promise.all([loadStats(), loadKeywords(), loadMentions(), loadScans(), loadRansomware(), loadForumData()])
+    await Promise.all([loadStats(), loadKeywords(), loadScans(), loadRansomware(), loadForumData()])
     setLoading(false)
   }
 
@@ -346,13 +354,6 @@ export default function DarkWebMonitor() {
       if (filterPri) params.priority = filterPri
       const r = await api.get('/darkweb/keywords', { params })
       setKeywords(r.data)
-    } catch {}
-  }
-
-  const loadMentions = async () => {
-    try {
-      const r = await api.get('/darkweb/mentions', { params: { limit: 50, days: 30 } })
-      setMentions(r.data)
     } catch {}
   }
 
@@ -403,7 +404,7 @@ export default function DarkWebMonitor() {
     try {
       await api.post('/darkweb/scan/trigger', null, { params: { scan_type: scanType } })
       setTimeout(async () => {
-        await Promise.all([loadRansomware(), loadStats(), loadScans(), loadMentions()])
+        await Promise.all([loadRansomware(), loadStats(), loadScans()])
         setScanning(null)
       }, 15000)
     } catch {
@@ -460,7 +461,6 @@ export default function DarkWebMonitor() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'watchlist', label: 'Watchlist' },
-    { id: 'mentions', label: 'Mentions' },
     { id: 'ransomware', label: 'Ransomware' },
     { id: 'search', label: 'Dark Web Search' },
     { id: 'forums', label: 'Forum Intel' },
@@ -508,11 +508,6 @@ export default function DarkWebMonitor() {
               }`}
             >
               {tab.label}
-              {tab.id === 'mentions' && (stats?.unreviewed_mentions ?? 0) > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-red-900 text-red-400">
-                  {stats.unreviewed_mentions}
-                </span>
-              )}
               {tab.id === 'ransomware' && (ransomware?.stats?.total_sl_victims ?? 0) > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-red-900 text-red-400">
                   {ransomware.stats.total_sl_victims} LK
@@ -528,7 +523,26 @@ export default function DarkWebMonitor() {
         </div>
 
         {/* ── OVERVIEW ──────────────────────────────────────────────────────── */}
-        {activeTab === 'overview' && (
+        {activeTab === 'overview' && (() => {
+          const lastForumScan = scans.find(s => s.scan_type === 'forums')
+          const nextForumMs = lastForumScan?.completed_at
+            ? new Date(lastForumScan.completed_at).getTime() + 1800 * 1000
+            : null
+          const remainingSec = nextForumMs ? Math.floor((nextForumMs - now) / 1000) : null
+          const nextLabel = remainingSec === null ? '—'
+            : remainingSec <= 0 ? 'any moment'
+            : remainingSec < 60 ? `${remainingSec}s`
+            : `~${Math.floor(remainingSec / 60)}m`
+          const lastRanLabel = lastForumScan?.completed_at
+            ? (() => {
+                const diff = Math.floor((now - new Date(lastForumScan.completed_at).getTime()) / 1000)
+                if (diff < 60) return `${diff}s ago`
+                if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+                return `${Math.floor(diff / 3600)}h ago`
+              })()
+            : 'never'
+
+          return (
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard label="Active Keywords" value={stats?.active_keywords ?? '—'} sub="being monitored" />
@@ -547,9 +561,20 @@ export default function DarkWebMonitor() {
               <StatCard label="Last 7 Days" value={stats?.mentions_7d ?? '—'} sub="total mentions" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <StatCard label="Critical Mentions" value={stats?.critical_mentions ?? '—'} sub="all time" valueClass="text-danger" />
               <StatCard label="High Mentions" value={stats?.high_mentions ?? '—'} sub="all time" valueClass="text-warning" />
+              <div
+                className="bg-surface border border-border rounded-lg p-4 cursor-pointer hover:border-accent-green/50 transition-colors"
+                onClick={() => setActiveTab('forums')}
+                title="Go to Forum Intelligence"
+              >
+                <div className="text-xs font-mono text-text-muted uppercase tracking-widest mb-1">Next Forum Scan</div>
+                <div className={`text-2xl font-bold font-mono ${remainingSec !== null && remainingSec <= 300 ? 'text-yellow-400' : 'text-accent-green'}`}>
+                  {nextLabel}
+                </div>
+                <div className="text-xs text-text-muted mt-1">last ran {lastRanLabel} · every 30 min</div>
+              </div>
             </div>
 
             {/* Sources status */}
@@ -618,7 +643,8 @@ export default function DarkWebMonitor() {
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* ── WATCHLIST ─────────────────────────────────────────────────────── */}
         {activeTab === 'watchlist' && (
@@ -728,54 +754,6 @@ export default function DarkWebMonitor() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── MENTIONS ──────────────────────────────────────────────────────── */}
-        {activeTab === 'mentions' && (
-          <div className="space-y-4">
-            {mentions.length === 0 ? (
-              <div className="text-center py-16 border border-dashed border-border rounded-lg">
-                <p className="text-text-muted font-mono text-sm">No mentions yet</p>
-                <p className="text-xs text-text-muted mt-2">
-                  Mentions will appear here as data sources come online
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {mentions.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`p-4 rounded-lg border bg-surface ${
-                      m.severity === 'CRITICAL' ? 'border-red-900'
-                      : m.severity === 'HIGH' ? 'border-orange-900'
-                      : m.severity === 'MEDIUM' ? 'border-yellow-900'
-                      : 'border-border'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <PriorityBadge priority={m.severity} />
-                          <span className="text-xs font-mono text-text-muted">{m.source}</span>
-                          <span className="text-xs font-mono text-accent-green">"{m.keyword_matched}"</span>
-                        </div>
-                        {m.title && <p className="text-sm text-text-primary font-medium mb-1">{m.title}</p>}
-                        {m.snippet && <p className="text-xs text-text-muted leading-relaxed">{m.snippet}</p>}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-mono text-text-muted">
-                          {new Date(m.discovered_at).toLocaleString()}
-                        </div>
-                        {!m.is_reviewed && (
-                          <span className="text-xs font-mono text-warning">Unreviewed</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>
