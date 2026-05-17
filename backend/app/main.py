@@ -12,6 +12,7 @@ from app.core.websocket import manager, redis_subscriber
 
 from app.api import auth, threat_intel, dark_web, news, geoint, profiles, socmint, cyber_surface, alerts, dashboard, users, admin_users
 from app.api import darkweb
+from app.api import forum_credentials
 
 logger = structlog.get_logger()
 
@@ -69,6 +70,7 @@ for router in [
     alerts.router,
     dashboard.router,
     darkweb.router,
+    forum_credentials.router,
 ]:
     app.include_router(router, prefix="/api")
 

@@ -573,3 +573,113 @@ def scan_ransomware_historical(self):
     except Exception as exc:
         logger.error("scan_ransomware_historical failed", exc_info=True)
         raise self.retry(exc=exc)
+
+
+# ── Phase 5: Forum Scan (Breached.st + others) ────────────────────────────────
+
+async def _run_surface_forum_scan() -> dict:
+    from app.models.darkweb import DarkWebScan, DarkWebAlert
+    from app.models.forum_credentials import ForumCredential
+    from app.services.darkweb.sources.breached_st import run_full_scan, SL_KEYWORDS
+    from app.services.darkweb.forum_auth import ensure_valid_session
+    from sqlalchemy import and_
+
+    engine, AsyncSessionLocal = _make_session()
+    try:
+        async with AsyncSessionLocal() as db:
+            scan = DarkWebScan(
+                id=uuid.uuid4(),
+                scan_type="forums",
+                source="breached_st",
+                status="running",
+                started_at=datetime.utcnow(),
+                created_at=datetime.utcnow(),
+            )
+            db.add(scan)
+            await db.commit()
+
+            try:
+                all_matches = []
+
+                result = await db.execute(
+                    select(ForumCredential).where(
+                        and_(
+                            ForumCredential.forum_id == "breached_st",
+                            ForumCredential.is_active == True,
+                        )
+                    )
+                )
+                breached = result.scalar_one_or_none()
+
+                if breached:
+                    is_valid, auth_error = await ensure_valid_session(breached, db)
+
+                    if is_valid:
+                        logger.info("Running Breached.st forum scan...")
+                        matches = await run_full_scan(
+                            cookies=breached.session_cookies,
+                            keywords=SL_KEYWORDS,
+                        )
+                        all_matches.extend([m for m in matches if not m.get("error")])
+                        breached.last_used = datetime.utcnow()
+                        await db.commit()
+                    else:
+                        logger.warning(f"Breached.st unavailable: {auth_error}")
+                        if any(w in auth_error.lower() for w in ("password", "failed", "decrypt")):
+                            alert = DarkWebAlert(
+                                id=uuid.uuid4(),
+                                mention_id=uuid.uuid4(),
+                                severity="HIGH",
+                                title=f"Forum auth failed: {breached.forum_name}",
+                                message=auth_error,
+                                is_acknowledged=False,
+                                notification_sent=False,
+                                created_at=datetime.utcnow(),
+                            )
+                            db.add(alert)
+                            await db.commit()
+                else:
+                    logger.info("No active Breached.st credential configured — skipping forum scan")
+
+                new_count = 0
+                for match in all_matches:
+                    res = await _save_mention(db, match)
+                    if res == "new":
+                        new_count += 1
+
+                scan.status = "completed"
+                scan.keywords_scanned = len(SL_KEYWORDS)
+                scan.mentions_found = len(all_matches)
+                scan.new_mentions = new_count
+                scan.completed_at = datetime.utcnow()
+                scan.duration_seconds = (scan.completed_at - scan.started_at).total_seconds()
+                await db.commit()
+
+                logger.info(f"Forum scan complete: {len(all_matches)} found, {new_count} new")
+                return {"found": len(all_matches), "new": new_count}
+
+            except Exception as e:
+                scan.status = "failed"
+                scan.error_message = str(e)
+                scan.completed_at = datetime.utcnow()
+                await db.commit()
+                logger.error(f"Forum scan failed: {e}", exc_info=True)
+                raise
+    finally:
+        await engine.dispose()
+
+
+@shared_task(
+    name="app.tasks.darkweb_tasks.scan_forums",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+    queue="darkweb",
+)
+def scan_forums(self):
+    """Scan authenticated forums (Breached.st etc.) for keyword matches."""
+    try:
+        return run_async(_run_surface_forum_scan())
+    except Exception as exc:
+        logger.error("scan_forums failed", exc_info=True)
+        raise self.retry(exc=exc)

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc, and_
+from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -210,7 +210,11 @@ async def get_mentions(
     if severity:
         query = query.where(DarkWebMention.severity == severity)
     if keyword:
-        query = query.where(DarkWebMention.keyword_matched.ilike(f"%{keyword}%"))
+        query = query.where(or_(
+            DarkWebMention.keyword_matched.ilike(f"%{keyword}%"),
+            DarkWebMention.title.ilike(f"%{keyword}%"),
+            DarkWebMention.snippet.ilike(f"%{keyword}%"),
+        ))
     if is_reviewed is not None:
         query = query.where(DarkWebMention.is_reviewed == is_reviewed)
 
@@ -392,6 +396,7 @@ async def trigger_scan(
         scan_paste_sites,
         scan_dark_web_search,
         scan_ransomware_historical,
+        scan_forums,
     )
 
     task_map = {
@@ -400,6 +405,7 @@ async def trigger_scan(
         "paste": (scan_paste_sites, "Paste site scan started"),
         "search": (scan_dark_web_search, "Dark web search scan started"),
         "historical": (scan_ransomware_historical, "Historical ransomware scan started — scanning all years for Sri Lanka victims"),
+        "forums": (scan_forums, "Forum scan started — scanning Breached.st and other configured forums"),
     }
 
     if scan_type not in task_map:
@@ -542,4 +548,103 @@ async def get_ransomware_stats(
             "group": latest.threat_actor,
             "date": latest.discovered_at.isoformat(),
         } if latest else None,
+    }
+
+
+# ─── Forum Intelligence ───────────────────────────────────────────────────────
+
+FORUM_SOURCES = ["breached_st", "forum_intelligence", "breached.st"]
+
+
+@router.get("/forum-mentions")
+async def get_forum_mentions(
+    forum_id: Optional[str] = None,
+    severity: Optional[str] = None,
+    keyword: Optional[str] = None,
+    days: int = Query(30, ge=1, le=365),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """All mentions from authenticated forum sources (Breached.st etc.)."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Match any source containing "forum" OR any known forum source name
+    forum_filter = and_(
+        DarkWebMention.discovered_at >= cutoff,
+        DarkWebMention.is_false_positive == False,
+        DarkWebMention.source.in_(FORUM_SOURCES)
+        | DarkWebMention.source.like("%forum%")
+        | DarkWebMention.source.like("%breached%"),
+    )
+
+    query = select(DarkWebMention).where(forum_filter)
+
+    if forum_id:
+        query = query.where(DarkWebMention.source.ilike(f"%{forum_id}%"))
+    if severity:
+        query = query.where(DarkWebMention.severity == severity)
+    if keyword:
+        query = query.where(or_(
+            DarkWebMention.keyword_matched.ilike(f"%{keyword}%"),
+            DarkWebMention.title.ilike(f"%{keyword}%"),
+            DarkWebMention.snippet.ilike(f"%{keyword}%"),
+        ))
+
+    query = query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
+
+    result = await db.execute(query)
+    mentions = result.scalars().all()
+
+    # Aggregate stats across all-time (not capped by days filter)
+    all_forum = and_(
+        DarkWebMention.is_false_positive == False,
+        DarkWebMention.source.in_(FORUM_SOURCES)
+        | DarkWebMention.source.like("%forum%")
+        | DarkWebMention.source.like("%breached%"),
+    )
+    total = (await db.execute(select(func.count(DarkWebMention.id)).where(all_forum))).scalar()
+    critical_high = (await db.execute(
+        select(func.count(DarkWebMention.id)).where(
+            and_(all_forum, DarkWebMention.severity.in_(["CRITICAL", "HIGH"]))
+        )
+    )).scalar()
+    unreviewed = (await db.execute(
+        select(func.count(DarkWebMention.id)).where(
+            and_(all_forum, DarkWebMention.is_reviewed == False)
+        )
+    )).scalar()
+
+    # Per-source breakdown for the period
+    src_counts = await db.execute(
+        select(DarkWebMention.source, func.count(DarkWebMention.id).label("c"))
+        .where(forum_filter)
+        .group_by(DarkWebMention.source)
+    )
+
+    return {
+        "mentions": [
+            {
+                "id": str(m.id),
+                "title": m.title,
+                "snippet": m.snippet,
+                "source": m.source,
+                "source_url": m.source_url,
+                "severity": m.severity,
+                "keyword_matched": m.keyword_matched,
+                "threat_actor": m.threat_actor,
+                "is_reviewed": m.is_reviewed,
+                "analyst_notes": m.analyst_notes,
+                "discovered_at": m.discovered_at.isoformat(),
+                "raw_data": m.raw_data or {},
+            }
+            for m in mentions
+        ],
+        "stats": {
+            "total": total,
+            "critical_high": critical_high,
+            "unreviewed": unreviewed,
+            "by_source": {row[0]: row[1] for row in src_counts.all()},
+        },
     }

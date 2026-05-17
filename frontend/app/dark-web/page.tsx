@@ -220,9 +220,53 @@ const AddKeywordModal = ({
   )
 }
 
+// ── Analyst Note Editor ───────────────────────────────────────────────────────
+
+const AnalystNoteEditor = ({
+  mentionId,
+  existingNote,
+  onSave,
+}: {
+  mentionId: string
+  existingNote: string | null
+  onSave: () => void
+}) => {
+  const [note, setNote] = useState(existingNote || '')
+  const [saving, setSaving] = useState(false)
+
+  const saveNote = async () => {
+    setSaving(true)
+    try {
+      await api.patch(`/darkweb/mentions/${mentionId}`, { analyst_notes: note })
+      onSave()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Add analyst notes..."
+        rows={3}
+        className="w-full bg-surface border border-border rounded px-3 py-2 text-sm font-mono text-text-primary focus:border-accent-green focus:outline-none resize-none"
+      />
+      <button
+        onClick={saveNote}
+        disabled={saving}
+        className="px-3 py-1.5 rounded bg-accent-green text-black font-mono text-xs font-bold disabled:opacity-50"
+      >
+        {saving ? 'Saving...' : 'Save Note'}
+      </button>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'watchlist' | 'mentions' | 'ransomware' | 'search' | 'scans'
+type Tab = 'overview' | 'watchlist' | 'mentions' | 'ransomware' | 'search' | 'scans' | 'forums'
 
 export default function DarkWebMonitor() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -247,12 +291,44 @@ export default function DarkWebMonitor() {
   const [searchResults, setSearchResults] = useState<any>(null)
   const [searching, setSearching] = useState(false)
 
+  // Forum Intel tab state
+  const [forumData, setForumData] = useState<any>(null)
+  const [forumFilter, setForumFilter] = useState({ severity: '', keyword: '', days: 30 })
+  const [selectedMention, setSelectedMention] = useState<any>(null)
+  const [forumScanning, setForumScanning] = useState(false)
+
   useEffect(() => { loadAll() }, [])
 
   const loadAll = async () => {
     setLoading(true)
-    await Promise.all([loadStats(), loadKeywords(), loadMentions(), loadScans(), loadRansomware()])
+    await Promise.all([loadStats(), loadKeywords(), loadMentions(), loadScans(), loadRansomware(), loadForumData()])
     setLoading(false)
+  }
+
+  const loadForumData = async (filter?: { severity: string; keyword: string; days: number }) => {
+    const f = filter ?? forumFilter
+    try {
+      const params: Record<string, string> = { days: String(f.days), limit: '50' }
+      if (f.severity) params.severity = f.severity
+      if (f.keyword) params.keyword = f.keyword
+      const r = await api.get('/darkweb/forum-mentions', { params })
+      setForumData(r.data)
+    } catch {}
+  }
+
+  const triggerForumScan = async () => {
+    setForumScanning(true)
+    try {
+      await api.post('/darkweb/scan/trigger', null, { params: { scan_type: 'forums' } })
+      // Poll once after 45s
+      setTimeout(() => {
+        loadForumData()
+        loadStats()
+        setForumScanning(false)
+      }, 45000)
+    } catch {
+      setForumScanning(false)
+    }
   }
 
   const loadStats = async () => {
@@ -387,6 +463,7 @@ export default function DarkWebMonitor() {
     { id: 'mentions', label: 'Mentions' },
     { id: 'ransomware', label: 'Ransomware' },
     { id: 'search', label: 'Dark Web Search' },
+    { id: 'forums', label: 'Forum Intel' },
     { id: 'scans', label: 'Scan History' },
   ]
 
@@ -439,6 +516,11 @@ export default function DarkWebMonitor() {
               {tab.id === 'ransomware' && (ransomware?.stats?.total_sl_victims ?? 0) > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-red-900 text-red-400">
                   {ransomware.stats.total_sl_victims} LK
+                </span>
+              )}
+              {tab.id === 'forums' && (forumData?.stats?.unreviewed ?? 0) > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-orange-900 text-orange-400">
+                  {forumData.stats.unreviewed}
                 </span>
               )}
             </button>
@@ -1041,6 +1123,276 @@ export default function DarkWebMonitor() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── FORUM INTEL ───────────────────────────────────────────────────── */}
+        {activeTab === 'forums' && (
+          <div className="space-y-4">
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              <StatCard
+                label="Total Forum Hits"
+                value={forumData?.stats?.total ?? 0}
+                sub="all time"
+              />
+              <StatCard
+                label="Critical / High"
+                value={forumData?.stats?.critical_high ?? 0}
+                sub="need attention"
+                valueClass={(forumData?.stats?.critical_high ?? 0) > 0 ? 'text-red-400' : 'text-accent-green'}
+              />
+              <StatCard
+                label="Unreviewed"
+                value={forumData?.stats?.unreviewed ?? 0}
+                sub="pending review"
+                valueClass={(forumData?.stats?.unreviewed ?? 0) > 0 ? 'text-orange-400' : 'text-accent-green'}
+              />
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                value={forumFilter.keyword}
+                onChange={(e) => setForumFilter((p) => ({ ...p, keyword: e.target.value }))}
+                placeholder="Filter by keyword..."
+                className="flex-1 min-w-48 bg-surface border border-border rounded px-3 py-2 text-sm text-text-primary font-mono focus:border-accent-green focus:outline-none"
+              />
+              <select
+                value={forumFilter.severity}
+                onChange={(e) => setForumFilter((p) => ({ ...p, severity: e.target.value }))}
+                className="bg-surface border border-border rounded px-3 py-2 text-sm text-text-primary font-mono focus:border-accent-green focus:outline-none"
+              >
+                <option value="">All Severities</option>
+                <option value="CRITICAL">CRITICAL</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+              <select
+                value={forumFilter.days}
+                onChange={(e) => setForumFilter((p) => ({ ...p, days: parseInt(e.target.value) }))}
+                className="bg-surface border border-border rounded px-3 py-2 text-sm text-text-primary font-mono focus:border-accent-green focus:outline-none"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={365}>Last year</option>
+              </select>
+              <button
+                onClick={() => loadForumData(forumFilter)}
+                className="px-3 py-2 rounded border border-border text-xs font-mono text-text-muted hover:border-accent-green hover:text-accent-green transition-colors"
+              >
+                Apply
+              </button>
+              <a href="/dark-web/forums" className="px-3 py-2 rounded border border-border text-xs font-mono text-text-muted hover:border-accent-green hover:text-accent-green transition-colors">
+                Manage Sources
+              </a>
+              <button
+                onClick={triggerForumScan}
+                disabled={forumScanning}
+                className="ml-auto px-4 py-2 rounded border border-accent-green text-xs font-mono text-accent-green hover:bg-accent-green hover:text-black disabled:opacity-50 transition-all"
+              >
+                {forumScanning ? '⟳ Scanning...' : '⟳ Scan Forums Now'}
+              </button>
+            </div>
+
+            {/* Results */}
+            {!forumData?.mentions?.length ? (
+              <div className="text-center py-16 border border-dashed border-border rounded-lg space-y-2">
+                <p className="text-text-muted font-mono text-sm">No forum intelligence yet</p>
+                <p className="text-xs text-text-muted">
+                  {forumData === null
+                    ? 'Loading...'
+                    : 'Add forum credentials and run a scan to collect intelligence'}
+                </p>
+                <div className="flex items-center justify-center gap-4 pt-2">
+                  <a href="/dark-web/forums" className="text-xs font-mono text-accent-green hover:underline">
+                    Configure credentials →
+                  </a>
+                  <button
+                    onClick={triggerForumScan}
+                    disabled={forumScanning}
+                    className="text-xs font-mono text-accent-green hover:underline disabled:opacity-50"
+                  >
+                    {forumScanning ? 'Scanning...' : 'Scan now →'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {forumData.mentions.map((m: any) => {
+                  const sevCls =
+                    m.severity === 'CRITICAL' ? 'border-red-900 bg-red-950/10' :
+                    m.severity === 'HIGH'     ? 'border-orange-900 bg-orange-950/10' :
+                    m.severity === 'MEDIUM'   ? 'border-yellow-900/50' :
+                    'border-border'
+                  const badgeCls =
+                    m.severity === 'CRITICAL' ? 'bg-red-950 text-red-400 border-red-900' :
+                    m.severity === 'HIGH'     ? 'bg-orange-950 text-orange-400 border-orange-900' :
+                    m.severity === 'MEDIUM'   ? 'bg-yellow-950 text-yellow-400 border-yellow-900' :
+                    'bg-gray-900 text-gray-400 border-gray-700'
+
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => setSelectedMention(m)}
+                      className={`p-4 rounded-lg border bg-surface cursor-pointer hover:brightness-110 transition-all ${sevCls}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center flex-wrap gap-2 mb-2">
+                            <span className={`text-xs font-mono px-2 py-0.5 rounded border shrink-0 ${badgeCls}`}>
+                              {m.severity}
+                            </span>
+                            <span className="text-xs font-mono px-2 py-0.5 rounded border bg-background border-border text-accent-green shrink-0">
+                              {m.source.replace(/_/g, '.').toUpperCase()}
+                            </span>
+                            <span className="text-xs font-mono text-text-muted">
+                              matched: &ldquo;{m.keyword_matched}&rdquo;
+                            </span>
+                            {!m.is_reviewed && (
+                              <span className="text-xs font-mono text-orange-400 ml-auto shrink-0">● New</span>
+                            )}
+                          </div>
+                          <p className="text-sm font-mono font-medium text-text-primary mb-1 truncate">
+                            {m.title || '(no title)'}
+                          </p>
+                          {m.snippet && (
+                            <p className="text-xs text-text-muted leading-relaxed line-clamp-2">{m.snippet}</p>
+                          )}
+                          {m.threat_actor && (
+                            <p className="text-xs font-mono text-text-muted mt-1">
+                              Posted by: <span className="text-red-400">{m.threat_actor}</span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-xs font-mono text-text-muted mb-2">
+                            {new Date(m.discovered_at).toLocaleString()}
+                          </div>
+                          {m.source_url && (
+                            <a
+                              href={m.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs font-mono text-blue-400 hover:text-blue-300"
+                            >
+                              View Post ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Detail panel */}
+            {selectedMention && (
+              <div
+                className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+                onClick={() => setSelectedMention(null)}
+              >
+                <div
+                  className="bg-surface border border-border rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Detail header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                        selectedMention.severity === 'CRITICAL' ? 'bg-red-950 text-red-400 border-red-900' :
+                        selectedMention.severity === 'HIGH'     ? 'bg-orange-950 text-orange-400 border-orange-900' :
+                        'bg-yellow-950 text-yellow-400 border-yellow-900'
+                      }`}>
+                        {selectedMention.severity}
+                      </span>
+                      <span className="text-xs font-mono text-accent-green">
+                        {selectedMention.source.replace(/_/g, '.').toUpperCase()}
+                      </span>
+                    </div>
+                    <button onClick={() => setSelectedMention(null)} className="text-text-muted hover:text-text-primary text-xl">✕</button>
+                  </div>
+
+                  <h2 className="text-base font-mono font-bold text-text-primary mb-4">{selectedMention.title}</h2>
+
+                  {/* Metadata grid */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    {[
+                      { label: 'Keyword Matched', value: selectedMention.keyword_matched },
+                      { label: 'Posted By',        value: selectedMention.threat_actor || '—' },
+                      { label: 'Discovered',       value: new Date(selectedMention.discovered_at).toLocaleString() },
+                      { label: 'Source',           value: selectedMention.source },
+                    ].map((item) => (
+                      <div key={item.label} className="bg-background rounded p-3 border border-border">
+                        <div className="text-xs text-text-muted font-mono uppercase tracking-widest mb-1">{item.label}</div>
+                        <div className="text-sm font-mono text-text-primary">{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Snippet */}
+                  {selectedMention.snippet && (
+                    <div className="mb-4">
+                      <div className="text-xs font-mono text-text-muted uppercase tracking-widest mb-2">Content Preview</div>
+                      <div className="bg-background rounded p-3 border border-border text-sm text-text-muted leading-relaxed font-mono">
+                        {selectedMention.snippet}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex gap-3 pt-4 border-t border-border mb-4">
+                    {selectedMention.source_url && (
+                      <a
+                        href={selectedMention.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 rounded border border-accent-green text-xs font-mono text-accent-green hover:bg-accent-green hover:text-black transition-all"
+                      >
+                        Open Forum Post ↗
+                      </a>
+                    )}
+                    <button
+                      onClick={async () => {
+                        await api.patch(`/darkweb/mentions/${selectedMention.id}`, { is_reviewed: true })
+                        setSelectedMention(null)
+                        loadForumData()
+                      }}
+                      className="px-4 py-2 rounded border border-green-700 text-xs font-mono text-green-400 hover:bg-green-950 transition-all"
+                    >
+                      ✓ Mark Reviewed
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await api.patch(`/darkweb/mentions/${selectedMention.id}`, { is_false_positive: true })
+                        setSelectedMention(null)
+                        loadForumData()
+                      }}
+                      className="px-4 py-2 rounded border border-border text-xs font-mono text-text-muted hover:text-text-primary transition-all"
+                    >
+                      False Positive
+                    </button>
+                  </div>
+
+                  {/* Analyst notes */}
+                  <div>
+                    <div className="text-xs font-mono text-text-muted uppercase tracking-widest mb-2">Analyst Notes</div>
+                    <AnalystNoteEditor
+                      mentionId={selectedMention.id}
+                      existingNote={selectedMention.analyst_notes}
+                      onSave={() => loadForumData()}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 

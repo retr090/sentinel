@@ -8,6 +8,7 @@ from app.models.profile import Profile, ProfileAttribute, ProfileLink, ProfileNo
 from app.models.socmint import SocialKeyword, SocialPost, SocialAccount, SocialAlert
 from app.models.cyber_surface import MonitoredAsset, AssetScan, AssetVulnerability, AssetAlert
 from app.models.alerts import Alert, AlertAssignment, Report, ReportTemplate, NotificationConfig
+from app.models.forum_credentials import ForumCredential
 
 __all__ = [
     "User", "AuditLog",
@@ -20,4 +21,5 @@ __all__ = [
     "MonitoredAsset", "AssetScan", "AssetVulnerability", "AssetAlert",
     "Alert", "AlertAssignment", "Report", "ReportTemplate", "NotificationConfig",
     "DarkWebKeyword", "DWMention", "DarkWebScan", "DarkWebAlert",
+    "ForumCredential",
 ]
