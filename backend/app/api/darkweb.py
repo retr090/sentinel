@@ -586,11 +586,27 @@ async def get_forum_mentions(
     if severity:
         query = query.where(DarkWebMention.severity == severity)
     if keyword:
-        query = query.where(or_(
-            DarkWebMention.keyword_matched.ilike(f"%{keyword}%"),
-            DarkWebMention.title.ilike(f"%{keyword}%"),
-            DarkWebMention.snippet.ilike(f"%{keyword}%"),
-        ))
+        # Normalise common Sri Lanka aliases so either spelling finds the same data
+        kw = keyword.strip()
+        terms = [kw]
+        kl = kw.lower()
+        if kl == "srilanka":
+            terms.append("sri lanka")
+        elif kl == "sri lanka":
+            terms.append("srilanka")
+        elif kl in ("sl", "lk"):
+            terms += ["sri lanka", "srilanka", ".lk"]
+
+        conditions = []
+        for t in terms:
+            conditions += [
+                DarkWebMention.keyword_matched.ilike(f"%{t}%"),
+                DarkWebMention.title.ilike(f"%{t}%"),
+                DarkWebMention.snippet.ilike(f"%{t}%"),
+                DarkWebMention.victim_org.ilike(f"%{t}%"),
+                DarkWebMention.source_url.ilike(f"%{t}%"),
+            ]
+        query = query.where(or_(*conditions))
 
     query = query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
 

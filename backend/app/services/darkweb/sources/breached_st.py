@@ -12,7 +12,7 @@ import re
 import asyncio
 import httpx
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 BASE_URL = "https://breached.st"
@@ -30,13 +30,6 @@ LEAKS_CATEGORIES = {
     "other leaks", "database discussion", "sellers place",
 }
 
-# Sri Lanka keywords — only these are searched
-SL_KEYWORDS = [
-    "sri lanka",
-    "srilanka",
-    ".lk",
-]
-
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -47,6 +40,49 @@ BROWSER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": BASE_URL,
 }
+
+
+# Words that signal actual compromised/leaked data being shared.
+# Must match at least one to be included — filters out news, defacement reports,
+# and general discussion threads that mention SL keywords without containing real data.
+DATA_INDICATORS = frozenset({
+    # Data exposure
+    "database", "db dump", "data dump", "dump", "leaked", "leak", "leaks",
+    "breach", "breached", "exposed", "compromised",
+    # Credential / PII content
+    "credentials", "passwords", "usernames", "combolist", "combo",
+    "fullz", "ssn", "passport", "id card", "national id",
+    "email list", "phone list", "user data", "customer data", "personal info", "pii",
+    # Data artefacts
+    "records", "rows", "sql", "mysql", "backup", "dataset", "collection", "archive",
+    "stealer", "stealer logs",
+    # Sale / access listings
+    "for sale", "selling", "free download", "download link",
+    "rdp", "vpn access", "shell access", "admin access",
+})
+
+# Patterns that strongly indicate a news/discussion thread rather than a data post.
+# Checked against the title only (snippets can legitimately contain these words).
+NEWS_TITLE_PATTERNS = (
+    "breaking:", "[news]", "news:", "discussion:", "[discussion]",
+    "allegedly", "report:", "warning:", "advisory",
+    "cyber attack on", "ddos attack", "defaced", "defacement",
+    "hacking group claims", "claims to have hacked",
+)
+
+
+def _is_data_post(title: str, snippet: str) -> bool:
+    """Return True only if the thread contains evidence of actual compromised data.
+
+    Requires at least one DATA_INDICATOR in title+snippet, and no strong news-title
+    pattern that marks it as a news/discussion thread rather than a data leak post.
+    """
+    title_lower = title.lower()
+    # Reject up-front if the title looks like a news headline
+    if any(p in title_lower for p in NEWS_TITLE_PATTERNS):
+        return False
+    combined = title_lower + " " + snippet.lower()
+    return any(ind in combined for ind in DATA_INDICATORS)
 
 
 def determine_severity(title: str, snippet: str) -> str:
@@ -93,9 +129,14 @@ def _parse_result_item(item, keyword: str) -> Dict:
         snippet = snippet_el.get_text(strip=True)[:400] if snippet_el else ""
 
         time_el = item.find("time")
-        date_str = ""
+        published_at = None
         if time_el:
-            date_str = time_el.get("datetime", "") or time_el.get_text(strip=True)
+            ts = time_el.get("data-timestamp")
+            if ts:
+                try:
+                    published_at = datetime.utcfromtimestamp(int(ts))
+                except (ValueError, TypeError):
+                    pass
 
         forum_el = item.find("a", href=re.compile(r"/forums/", re.I))
         forum_name = forum_el.get_text(strip=True) if forum_el else "Leaks"
@@ -104,21 +145,40 @@ def _parse_result_item(item, keyword: str) -> Dict:
             return {}
 
         title_lower = title.lower()
+        kw_lower = keyword.lower()
+        kw_nospace = kw_lower.replace(" ", "")   # "sri lanka" → "srilanka"
         cat_lower = forum_name.lower()
-        title_has_sl = any(kw in title_lower for kw in SL_KEYWORDS)
-        snippet_has_sl = any(kw in snippet.lower() for kw in SL_KEYWORDS)
+        # Match either spaced or unspaced form — forum titles often omit spaces
+        # e.g. "SriLanka" matches keyword "sri lanka"
+        title_has_kw = kw_lower in title_lower or kw_nospace in title_lower.replace(" ", "")
+        snippet_lower = snippet.lower()
+        snippet_has_kw = kw_lower in snippet_lower or kw_nospace in snippet_lower.replace(" ", "")
         in_leaks_forum = cat_lower in LEAKS_CATEGORIES
 
-        # Keep result if: title mentions SL, OR snippet mentions SL in a Leaks forum
-        if not title_has_sl and not (snippet_has_sl and in_leaks_forum):
+        # Keep result if the search keyword appears directly in the title.
+        # If it only appears in the snippet (search engine matched it in the post body),
+        # require the title itself to also carry a data indicator — blocks unrelated
+        # threads that mention the keyword only in passing.
+        if title_has_kw:
+            pass
+        elif snippet_has_kw and in_leaks_forum:
+            if not _is_data_post(title, ""):
+                return {}
+        else:
+            return {}
+
+        # Reject news/discussion threads — only keep posts that contain evidence
+        # of actual compromised/leaked data (not just mentions of SL keywords)
+        if not _is_data_post(title, snippet):
             return {}
 
         return {
             "title": title[:500],
             "url": thread_url[:2000],
+            "source_url": thread_url[:2000],
             "snippet": snippet,
             "author": author,
-            "date_posted": date_str,
+            "published_at": published_at,
             "keyword_matched": keyword,
             "forum_id": "breached_st",
             "forum_name": "Breached.st",
@@ -263,13 +323,13 @@ async def browse_leaks_for_keyword(
                     break
 
                 page_hits = 0
+                kw_lower = keyword.lower()
+                kw_nospace = kw_lower.replace(" ", "")
                 for row in thread_rows:
                     row_text = row.get_text().lower()
-                    matched_kw = next(
-                        (kw for kw in SL_KEYWORDS if kw in row_text), None
-                    )
-                    if not matched_kw:
+                    if kw_lower not in row_text and kw_nospace not in row_text.replace(" ", ""):
                         continue
+                    matched_kw = keyword
 
                     link = row.find("a", href=re.compile(r"/threads/"))
                     if not link:
@@ -283,6 +343,11 @@ async def browse_leaks_for_keyword(
 
                     if thread_url in seen:
                         continue
+
+                    # Only include threads with actual data indicators
+                    if not _is_data_post(title, ""):
+                        continue
+
                     seen.add(thread_url)
 
                     data = {
@@ -328,7 +393,10 @@ async def run_full_scan(
       3. If search yields nothing, browse Leaks sub-forum pages directly.
       4. Deduplicate all results by thread URL.
     """
-    active_keywords = keywords if keywords else SL_KEYWORDS
+    active_keywords = keywords or []
+    if not active_keywords:
+        print("No keywords provided — skipping scan")
+        return []
 
     print("Verifying Breached.st session...")
     if not await check_session_valid(cookies):

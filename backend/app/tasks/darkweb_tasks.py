@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from celery import shared_task
 from celery.utils.log import get_task_logger
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 
 logger = get_task_logger(__name__)
 
@@ -49,18 +49,68 @@ async def _get_active_keywords(db) -> list:
     return list(set(terms))
 
 
+async def _get_priority_keywords(db) -> list:
+    """Return HIGH/CRITICAL priority keyword strings + aliases from the watchlist."""
+    from app.models.darkweb import DarkWebKeyword
+
+    result = await db.execute(
+        select(DarkWebKeyword).where(
+            DarkWebKeyword.is_active == True,
+            DarkWebKeyword.priority.in_(["CRITICAL", "HIGH"]),
+        )
+    )
+    terms = []
+    for kw in result.scalars().all():
+        terms.append(kw.keyword)
+        if kw.aliases:
+            terms.extend(kw.aliases[:3])
+    return list(set(terms))
+
+
 async def _save_mention(db, mention_data: dict, scan_id=None) -> str:
     """Save an intelligence mention. Returns 'new' or 'existing'."""
     from app.models.darkweb import DarkWebMention, DarkWebAlert
 
-    existing = await db.execute(
-        select(DarkWebMention).where(
+    source_url = mention_data.get("source_url")
+    dedup_conditions = [
+        and_(
             DarkWebMention.title == mention_data["title"],
             DarkWebMention.source == mention_data["source"],
         )
+    ]
+    if source_url:
+        dedup_conditions.append(
+            and_(
+                DarkWebMention.source_url == source_url,
+                DarkWebMention.source == mention_data["source"],
+            )
+        )
+    existing = await db.execute(
+        select(DarkWebMention).where(or_(*dedup_conditions))
     )
     if existing.scalar_one_or_none():
         return "existing"
+
+    # Update keyword hit_count + last_hit
+    from app.models.darkweb import DarkWebKeyword
+    kw_str = mention_data.get("keyword_matched", "")
+    if kw_str:
+        kw_rows = await db.execute(
+            select(DarkWebKeyword).where(
+                DarkWebKeyword.keyword == kw_str,
+                DarkWebKeyword.is_active == True,
+            )
+        )
+        kw_row = kw_rows.scalar_one_or_none()
+        if kw_row:
+            kw_row.hit_count = (kw_row.hit_count or 0) + 1
+            post_date = mention_data.get("published_at")
+            # Keep last_hit as the most recent post date seen for this keyword
+            if post_date:
+                if not kw_row.last_hit or post_date > kw_row.last_hit:
+                    kw_row.last_hit = post_date
+            elif not kw_row.last_hit:
+                kw_row.last_hit = datetime.utcnow()
 
     mention = DarkWebMention(
         id=uuid.uuid4(),
@@ -580,9 +630,8 @@ def scan_ransomware_historical(self):
 async def _run_surface_forum_scan() -> dict:
     from app.models.darkweb import DarkWebScan, DarkWebAlert
     from app.models.forum_credentials import ForumCredential
-    from app.services.darkweb.sources.breached_st import run_full_scan, SL_KEYWORDS
+    from app.services.darkweb.sources.breached_st import run_full_scan
     from app.services.darkweb.forum_auth import ensure_valid_session
-    from sqlalchemy import and_
 
     engine, AsyncSessionLocal = _make_session()
     try:
@@ -590,7 +639,7 @@ async def _run_surface_forum_scan() -> dict:
             scan = DarkWebScan(
                 id=uuid.uuid4(),
                 scan_type="forums",
-                source="breached_st",
+                source="all_forums",
                 status="running",
                 started_at=datetime.utcnow(),
                 created_at=datetime.utcnow(),
@@ -599,47 +648,73 @@ async def _run_surface_forum_scan() -> dict:
             await db.commit()
 
             try:
+                scan_keywords = await _get_priority_keywords(db)
+                if not scan_keywords:
+                    logger.info("No active keywords configured — skipping forum scan")
+                    scan.status = "completed"
+                    scan.keywords_scanned = 0
+                    scan.mentions_found = 0
+                    scan.new_mentions = 0
+                    scan.completed_at = datetime.utcnow()
+                    scan.duration_seconds = 0
+                    await db.commit()
+                    return {"found": 0, "new": 0, "skipped": "no keywords"}
+
+                logger.info(f"Forum scan: {len(scan_keywords)} keywords from DB watchlist")
+
                 all_matches = []
 
+                # Fetch all active forums (not just breached_st)
                 result = await db.execute(
-                    select(ForumCredential).where(
-                        and_(
-                            ForumCredential.forum_id == "breached_st",
-                            ForumCredential.is_active == True,
-                        )
-                    )
+                    select(ForumCredential).where(ForumCredential.is_active == True)
                 )
-                breached = result.scalar_one_or_none()
+                active_forums = result.scalars().all()
 
-                if breached:
-                    is_valid, auth_error = await ensure_valid_session(breached, db)
-
-                    if is_valid:
-                        logger.info("Running Breached.st forum scan...")
-                        matches = await run_full_scan(
-                            cookies=breached.session_cookies,
-                            keywords=SL_KEYWORDS,
-                        )
-                        all_matches.extend([m for m in matches if not m.get("error")])
-                        breached.last_used = datetime.utcnow()
-                        await db.commit()
-                    else:
-                        logger.warning(f"Breached.st unavailable: {auth_error}")
-                        if any(w in auth_error.lower() for w in ("password", "failed", "decrypt")):
-                            alert = DarkWebAlert(
-                                id=uuid.uuid4(),
-                                mention_id=uuid.uuid4(),
-                                severity="HIGH",
-                                title=f"Forum auth failed: {breached.forum_name}",
-                                message=auth_error,
-                                is_acknowledged=False,
-                                notification_sent=False,
-                                created_at=datetime.utcnow(),
-                            )
-                            db.add(alert)
-                            await db.commit()
+                if not active_forums:
+                    logger.info("No active forum credentials configured — skipping forum scan")
                 else:
-                    logger.info("No active Breached.st credential configured — skipping forum scan")
+                    for forum in active_forums:
+                        logger.info(f"Processing forum: {forum.forum_name} ({forum.forum_software})")
+                        is_valid, auth_error = await ensure_valid_session(forum, db)
+
+                        if not is_valid:
+                            logger.warning(f"{forum.forum_name} unavailable: {auth_error}")
+                            if any(w in auth_error.lower() for w in ("password", "failed", "decrypt")):
+                                alert = DarkWebAlert(
+                                    id=uuid.uuid4(),
+                                    mention_id=uuid.uuid4(),
+                                    severity="HIGH",
+                                    title=f"Forum auth failed: {forum.forum_name}",
+                                    message=auth_error,
+                                    is_acknowledged=False,
+                                    notification_sent=False,
+                                    created_at=datetime.utcnow(),
+                                )
+                                db.add(alert)
+                                await db.commit()
+                            continue
+
+                        # Route to the right scanner based on forum software / id
+                        software = (forum.forum_software or "mybb").lower()
+                        if software == "xenforo" or "breached" in forum.forum_id.lower():
+                            logger.info(f"Running XenForo/Breached.st scan on {forum.forum_name}...")
+                            matches = await run_full_scan(
+                                cookies=forum.session_cookies,
+                                keywords=scan_keywords,
+                            )
+                            all_matches.extend([m for m in matches if not m.get("error")])
+                        else:
+                            logger.info(f"No scanner implemented for {software} ({forum.forum_name}) — skipping")
+                            continue
+
+                        forum.last_used = datetime.utcnow()
+                        await db.commit()
+
+                # AI enrichment — filters non-breaches and extracts structured data.
+                # No-op if GROQ_API_KEY is not configured.
+                if all_matches:
+                    from app.services.darkweb.ai_analyst import enrich_results
+                    all_matches = await enrich_results(all_matches)
 
                 new_count = 0
                 for match in all_matches:
@@ -648,7 +723,7 @@ async def _run_surface_forum_scan() -> dict:
                         new_count += 1
 
                 scan.status = "completed"
-                scan.keywords_scanned = len(SL_KEYWORDS)
+                scan.keywords_scanned = len(scan_keywords)
                 scan.mentions_found = len(all_matches)
                 scan.new_mentions = new_count
                 scan.completed_at = datetime.utcnow()

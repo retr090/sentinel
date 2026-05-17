@@ -90,5 +90,10 @@ celery_app.conf.update(
             "schedule": 21600.0,
             "options": {"queue": "darkweb", "expires": 21540},
         },
+        "scan-forums": {
+            "task": "app.tasks.darkweb_tasks.scan_forums",
+            "schedule": 1800.0,
+            "options": {"queue": "darkweb", "expires": 1740},
+        },
     },
 )
