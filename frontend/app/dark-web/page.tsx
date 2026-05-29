@@ -43,6 +43,13 @@ type ForumMention = {
   keyword_matched?: string
   discovered_at?: string
   is_reviewed?: boolean
+  source_url?: string
+  snippet?: string
+  threat_actor?: string
+  analyst_notes?: string
+  triage_status?: string
+  is_false_positive?: boolean
+  raw_data?: Record<string, any>
 }
 
 type Tab = 'ransomware' | 'forums'
@@ -86,6 +93,7 @@ export default function DarkWebPage() {
   const [activeTab, setActiveTab] = useState<Tab>('ransomware')
   const [ransomwareDays, setRansomwareDays] = useState(30)
   const [selectedVictim, setSelectedVictim] = useState<RansomwareVictim | null>(null)
+  const [selectedMention, setSelectedMention] = useState<ForumMention | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -373,6 +381,107 @@ export default function DarkWebPage() {
           </div>
         )}
 
+        {selectedMention && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setSelectedMention(null)}>
+            <div className="bg-surface border border-border rounded-lg w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <div className="text-xs font-mono text-accent-green uppercase tracking-widest mb-2">Forum Mention Detail</div>
+                  <h3 className="text-lg font-mono font-bold text-text-primary">{selectedMention.title || 'Untitled forum mention'}</h3>
+                  <p className="text-sm text-text-muted mt-1">{selectedMention.source} / {selectedMention.threat_actor || 'No threat actor'}</p>
+                </div>
+                <button onClick={() => setSelectedMention(null)} className="text-text-muted hover:text-text-primary text-xl">x</button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+                <div className="bg-background border border-border rounded p-3">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Severity</div>
+                  <Severity value={selectedMention.severity} />
+                </div>
+                <div className="bg-background border border-border rounded p-3">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Matched By</div>
+                  <div className="text-sm font-mono text-text-primary">{selectedMention.keyword_matched || '-'}</div>
+                </div>
+                <div className="bg-background border border-border rounded p-3">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Discovered</div>
+                  <div className="text-sm font-mono text-text-primary">{selectedMention.discovered_at ? new Date(selectedMention.discovered_at).toLocaleString() : '-'}</div>
+                </div>
+              </div>
+
+              {selectedMention.snippet && (
+                <div className="mb-5">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-2">Forum Snippet</div>
+                  <div className="bg-background border border-border rounded p-4 text-sm text-text-muted leading-relaxed whitespace-pre-wrap">{selectedMention.snippet}</div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+                {[
+                  ['Thread URL', selectedMention.source_url],
+                  ['Triage', selectedMention.triage_status || 'new'],
+                  ['Reviewed', selectedMention.is_reviewed ? 'Yes' : 'No'],
+                  ['False Positive', selectedMention.is_false_positive ? 'Yes' : 'No'],
+                ].map(([label, value]) => (
+                  <div key={label || ''} className="bg-background border border-border rounded p-3 min-w-0">
+                    <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">{label}</div>
+                    {label === 'Thread URL' && value ? (
+                      <a href={String(value)} target="_blank" rel="noopener noreferrer" className="text-sm font-mono text-blue-400 hover:underline break-all">{value}</a>
+                    ) : (
+                      <div className="text-sm font-mono text-text-primary break-all">{value || '-'}</div>
+                    )}
+                  </div>
+                ))}
+                {selectedMention.analyst_notes && (
+                  <div className="col-span-full bg-background border border-border rounded p-3 min-w-0">
+                    <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Analyst Notes</div>
+                    <div className="text-sm font-mono text-text-primary whitespace-pre-wrap">{selectedMention.analyst_notes}</div>
+                  </div>
+                )}
+              </div>
+
+              {selectedMention.raw_data?.ai_analysis && (
+                <div className="mb-5 p-4 bg-background border border-border rounded">
+                  <div className="text-[10px] font-mono text-accent-green uppercase tracking-widest mb-3">AI Analysis</div>
+                  <div className="space-y-2 text-sm">
+                    {typeof selectedMention.raw_data.ai_analysis.confidence === 'number' && (
+                      <div className="flex gap-3">
+                        <span className="font-mono text-text-muted w-32 shrink-0">Confidence:</span>
+                        <span className="font-mono text-text-primary">{Math.round(selectedMention.raw_data.ai_analysis.confidence * 100)}%</span>
+                      </div>
+                    )}
+                    {selectedMention.raw_data.ai_analysis.summary && (
+                      <div className="flex gap-3">
+                        <span className="font-mono text-text-muted w-32 shrink-0">Summary:</span>
+                        <span className="font-mono text-text-primary">{selectedMention.raw_data.ai_analysis.summary}</span>
+                      </div>
+                    )}
+                    {selectedMention.raw_data.ai_analysis.data_types?.length > 0 && (
+                      <div className="flex gap-3">
+                        <span className="font-mono text-text-muted w-32 shrink-0">Data Types:</span>
+                        <span className="font-mono text-text-primary">{selectedMention.raw_data.ai_analysis.data_types.join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedMention.raw_data && Object.keys(selectedMention.raw_data).filter(k => k !== 'ai_analysis').length > 0 && (
+                <div>
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-2">Raw Data</div>
+                  <div className="bg-background border border-border rounded divide-y divide-border max-h-64 overflow-y-auto">
+                    {Object.entries(selectedMention.raw_data).filter(([k]) => k !== 'ai_analysis').map(([key, value]) => (
+                      <div key={key} className="grid grid-cols-3 gap-3 p-3 text-xs">
+                        <div className="font-mono text-text-muted break-all">{key}</div>
+                        <div className="col-span-2 font-mono text-text-primary break-all">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'forums' && <section className="bg-surface border border-border rounded-lg overflow-hidden">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div>
@@ -388,12 +497,17 @@ export default function DarkWebPage() {
           </div>
           <div className="divide-y divide-border">
             {(forums?.mentions || []).map((m: ForumMention) => (
-              <div key={m.id} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div>
-                  <div className="text-sm text-text-primary">{m.title || 'Untitled forum mention'}</div>
-                  <div className="text-xs text-text-muted font-mono mt-1">{m.source} / {m.keyword_matched || 'keyword match'} / {m.discovered_at ? new Date(m.discovered_at).toLocaleString() : '-'}</div>
+              <div key={m.id} onClick={() => setSelectedMention(m)} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 cursor-pointer hover:bg-background/60 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-text-primary truncate">{m.title || 'Untitled forum mention'}</div>
+                  <div className="text-xs text-text-muted font-mono mt-1 truncate">{m.source} / {m.keyword_matched || 'keyword match'} / {m.discovered_at ? new Date(m.discovered_at).toLocaleString() : '-'}</div>
                 </div>
-                <Severity value={m.severity} />
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {m.source_url && (
+                    <a href={m.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] font-mono text-blue-400 hover:underline">Open</a>
+                  )}
+                  <Severity value={m.severity} />
+                </div>
               </div>
             ))}
             {!loading && !forums?.mentions?.length && <div className="p-6 text-text-muted">No forum mentions found.</div>}
