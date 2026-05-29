@@ -543,4 +543,35 @@ export default function DarkWebPage() {
               </div>
             ))}
             {!loading && !forums?.mentions?.length && <div className="p-6 text-text-muted">No forum mentions found.</div>}
-          }
+          </div>
+        </section>}
+
+        <section className="bg-surface border border-border rounded-lg overflow-hidden">
+          <div className="p-4 border-b border-border">
+            <h2 className="font-mono text-sm font-bold tracking-widest text-accent-green">
+              RECENT {activeTab === 'ransomware' ? 'RANSOMWARE' : 'FORUM'} SCANS
+            </h2>
+          </div>
+          <div className="divide-y divide-border">
+            {scans.filter((scan) => activeTab === 'ransomware'
+              ? scan.scan_type.startsWith('ransomware')
+              : scan.scan_type === 'forums'
+            ).map((scan) => (
+              <div key={scan.id} className="p-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                <div className="font-mono text-text-primary">{scan.scan_type}</div>
+                <div className="text-text-muted">{scan.status}</div>
+                <div className="text-text-muted">Found: {scan.mentions_found ?? 0}</div>
+                <div className="text-text-muted">New: {scan.new_mentions ?? 0}</div>
+                <div className="text-text-muted font-mono text-xs">{formatColomboTime(scan.created_at)}</div>
+              </div>
+            ))}
+            {!loading && !scans.filter((scan) => activeTab === 'ransomware'
+              ? scan.scan_type.startsWith('ransomware')
+              : scan.scan_type === 'forums'
+            ).length && <div className="p-6 text-text-muted">No scans recorded.</div>}
+          </div>
+        </section>
+      </div>
+    </AppLayout>
+  )
+}
