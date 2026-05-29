@@ -325,9 +325,9 @@ def _parse_mybb_date(text: str) -> str:
     now = datetime.utcnow()
     text = text.strip().lower()
     if "minute" in text or "hour" in text or "second" in text:
-        return now.isoformat()
+        return now
     if "yesterday" in text:
-        return (now - timedelta(days=1)).isoformat()
+        return now - timedelta(days=1)
     m = re.match(r"(\d{1,2})-(\d{1,2})-(\d{2,4}),?\s+(\d{1,2}:\d{2}\s*(?:am|pm))", text)
     if m:
         day, mon, yr, tm = m.groups()
@@ -335,11 +335,10 @@ def _parse_mybb_date(text: str) -> str:
         if yr < 100:
             yr += 2000
         try:
-            dt = datetime.strptime(f"{yr}-{mon}-{day} {tm}", "%Y-%m-%d %I:%M %p")
-            return dt.isoformat()
+            return datetime.strptime(f"{yr}-{mon}-{day} {tm}", "%Y-%m-%d %I:%M %p")
         except ValueError:
             pass
-    return now.isoformat()
+    return now
 
 
 async def search_mybb_forum(
