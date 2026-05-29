@@ -13,16 +13,7 @@ logger = get_task_logger(__name__)
 FORUM_KEYWORDS = [
     "sri lanka",
     "srilanka",
-    "ceylon",
-    ".lk",
-    "gov.lk",
-    "mil.lk",
-    "colombo",
-    "kandy",
-    "jaffna",
-    "bank of ceylon",
-    "peoples bank",
-    "mobitel",
+    "2025",
 ]
 
 

@@ -48,7 +48,7 @@ def _forum_filter(days: Optional[int] = None):
         | DarkWebMention.source.like("%breached%"),
     ]
     if days is not None:
-        filters.append(DarkWebMention.discovered_at >= datetime.utcnow() - timedelta(days=days))
+        filters.append(DarkWebMention.feed_posted_at >= datetime.utcnow() - timedelta(days=days))
     return and_(*filters)
 
 
@@ -391,7 +391,7 @@ async def get_forum_mentions(
     days: int = Query(30, ge=1, le=365),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
-    sort_by: str = Query("discovered_at", regex="^(discovered_at|feed_posted_at)$"),
+    sort_by: str = Query("feed_posted_at", regex="^(discovered_at|feed_posted_at)$"),
     year: Optional[int] = None,
     search_in: str = Query("all", regex="^(all|title)$"),
     current_user=Depends(get_current_user),
@@ -458,6 +458,26 @@ async def get_forum_mentions(
             "by_source": {row[0]: row[1] for row in src_counts.all()},
         },
     }
+
+
+@router.post("/forum-mentions/mark-all-viewed")
+async def mark_all_forum_mentions_viewed(
+    current_user=Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DarkWebMention).where(and_(_forum_filter(), DarkWebMention.is_reviewed == False))
+    )
+    mentions = result.scalars().all()
+    now = datetime.utcnow()
+    username = str(getattr(current_user, "username", current_user.id))
+    for m in mentions:
+        m.is_reviewed = True
+        m.triage_status = "reviewed"
+        m.reviewed_by = username
+        m.reviewed_at = now
+    await db.commit()
+    return {"marked": len(mentions)}
 
 
 def _serialize_mention(mention: DarkWebMention):

@@ -321,24 +321,72 @@ def _mybb_determine_severity(title: str, snippet: str) -> str:
     return "MEDIUM"
 
 
-def _parse_mybb_date(text: str) -> str:
+async def _fetch_thread_post_date(
+    thread_url: str,
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
+) -> datetime | None:
+    """Fetch a MyBB thread page and extract the first post's original date."""
+    async with semaphore:
+        try:
+            r = await client.get(thread_url, timeout=15)
+            if r.status_code != 200:
+                return None
+
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # Collect all possible dates from the page, then return the oldest
+            # (the first post in a thread is always the oldest)
+            found_dates: list[datetime] = []
+
+            for tag in soup.find_all(["span", "div", "small", "td", "em", "strong", "a"]):
+                text = tag.get_text(strip=True)
+                # Try DD-MM-YY[YY], HH:MM [AM/PM]
+                if re.search(r"\d{1,2}-\d{1,2}-\d{2,4},?\s+\d{1,2}:\d{2}\s*(?:am|pm)?", text, re.I):
+                    parsed = _parse_mybb_date(text)
+                    if parsed:
+                        found_dates.append(parsed)
+
+            if found_dates:
+                oldest = min(found_dates)
+                return oldest
+        except Exception:
+            pass
+    return None
+
+
+def _parse_mybb_date(text: str) -> datetime | None:
     now = datetime.utcnow()
-    text = text.strip().lower()
-    if "minute" in text or "hour" in text or "second" in text:
+    raw = text.strip()
+    lower = raw.lower()
+    if "minute" in lower or "hour" in lower or "second" in lower:
         return now
-    if "yesterday" in text:
+    if "yesterday" in lower:
         return now - timedelta(days=1)
-    m = re.match(r"(\d{1,2})-(\d{1,2})-(\d{2,4}),?\s+(\d{1,2}:\d{2}\s*(?:am|pm))", text)
+    # Try DD-MM-YY[YY], HH:MM [AM/PM] with optional comma and optional AM/PM
+    m = re.search(r"(\d{1,2})-(\d{1,2})-(\d{2,4}),?\s+(\d{1,2}:\d{2}(?:\s*(?:am|pm))?)", raw)
     if m:
         day, mon, yr, tm = m.groups()
         yr = int(yr)
         if yr < 100:
             yr += 2000
-        try:
-            return datetime.strptime(f"{yr}-{mon}-{day} {tm}", "%Y-%m-%d %I:%M %p")
-        except ValueError:
-            pass
-    return now
+        upper = tm.upper()
+        for fmt in ("%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M"):
+            try:
+                return datetime.strptime(f"{yr}-{mon}-{day} {upper}", fmt)
+            except ValueError:
+                continue
+    # Try "Today, HH:MM AM/PM"
+    m2 = re.search(r"today,?\s+(\d{1,2}:\d{2}\s*(?:am|pm)?)", lower)
+    if m2:
+        tm = m2.group(1).upper()
+        for fmt in ("%I:%M %p", "%H:%M", "%I:%M"):
+            try:
+                parsed = datetime.strptime(tm, fmt)
+                return now.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+            except ValueError:
+                continue
+    return None
 
 
 async def search_mybb_forum(
@@ -430,6 +478,23 @@ async def search_mybb_forum(
                 print(f"  MyBB search timeout for '{keyword}'")
             except Exception as e:
                 print(f"  MyBB search error for '{keyword}': {e}")
+
+        # Fetch each thread's first post date to get the real original date
+        # (search results only show the last reply date)
+        if results and not any(r.get("error") == "session_expired" for r in results):
+            semaphore = asyncio.Semaphore(3)
+            tasks = []
+            for r in results:
+                url = r.get("source_url", "")
+                if url:
+                    tasks.append(_fetch_thread_post_date(url, client, semaphore))
+            if tasks:
+                real_dates = await asyncio.gather(*tasks)
+                for r, real_date in zip(results, real_dates):
+                    if real_date is not None:
+                        r["feed_posted_at"] = real_date
+                corrected = sum(1 for d in real_dates if d is not None)
+                print(f"  Corrected {corrected}/{len(results)} thread dates from individual pages")
 
     print(f"MyBB forum search complete: {len(results)} results")
     return results

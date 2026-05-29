@@ -21,38 +21,6 @@ interface Forum {
   notes: string | null
 }
 
-interface AiAnalysis {
-  is_breach: boolean
-  confidence: number
-  data_types: string[]
-  record_count: string | null
-  summary: string
-}
-
-interface Mention {
-  id: string
-  title: string
-  source: string
-  source_url: string | null
-  keyword_matched: string
-  severity: string
-  category: string | null
-  snippet: string | null
-  threat_actor: string | null
-  is_reviewed: boolean
-  analyst_notes: string | null
-  discovered_at: string
-  feed_posted_at: string | null
-  raw_data?: { ai_analysis?: AiAnalysis }
-}
-
-interface MentionStats {
-  total: number
-  critical_high: number
-  unreviewed: number
-  by_source: Record<string, number>
-}
-
 interface Scan {
   id: string
   scan_type: string
@@ -67,18 +35,6 @@ interface Scan {
   duration_seconds: number | null
   created_at: string
 }
-
-// ── Severity badge ────────────────────────────────────────────────────────────
-
-const SEV: Record<string, string> = {
-  CRITICAL: 'bg-red-950 text-red-400 border-red-900',
-  HIGH: 'bg-orange-950 text-orange-400 border-orange-900',
-  MEDIUM: 'bg-yellow-950 text-yellow-400 border-yellow-900',
-  LOW: 'bg-gray-900 text-gray-400 border-gray-700',
-}
-const SevBadge = ({ s }: { s: string }) => (
-  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${SEV[s] || SEV.LOW}`}>{s}</span>
-)
 
 // ── Forum status badge ────────────────────────────────────────────────────────
 
@@ -239,7 +195,7 @@ const SetupGuide = ({ onAddForum }: { onAddForum: () => void }) => (
         { n: '1', t: 'Add forum credentials', d: 'Provide your forum username and password. The password is AES-encrypted before storage — never stored in plaintext.' },
         { n: '2', t: 'Test authentication', d: 'Click "Login Now" to authenticate and store session cookies. Verify you see xf_user in the returned cookies.' },
         { n: '3', t: 'Trigger a scan', d: 'Run "Scan Now" or wait for the hourly scheduled scan. SENTINEL searches using your active keyword watchlist.' },
-        { n: '4', t: 'Triage hits', d: 'Review results in the Hits tab. Mark items as reviewed or false positive, and add analyst notes per hit.' },
+        { n: '4', t: 'Triage hits', d: 'Review results on the main Dark Web page. Mark items as reviewed or false positive, and add analyst notes.' },
       ].map(({ n, t, d }) => (
         <div key={n} className="flex gap-3">
           <div className="w-6 h-6 rounded-full border border-accent-green flex-shrink-0 flex items-center justify-center text-[10px] font-mono text-accent-green">{n}</div>
@@ -256,229 +212,21 @@ const SetupGuide = ({ onAddForum }: { onAddForum: () => void }) => (
   </div>
 )
 
-// ── Mention row + expanded detail ─────────────────────────────────────────────
-
-interface MentionRowProps {
-  m: Mention
-  isExpanded: boolean
-  onToggle: () => void
-  onReview: (id: string, updates: Partial<Mention>) => void
-  reviewing: boolean
-}
-
-const MentionRow = ({ m, isExpanded, onToggle, onReview, reviewing }: MentionRowProps) => {
-  const [notes, setNotes] = useState(m.analyst_notes || '')
-
-  const domain = m.source_url ? (() => { try { return new URL(m.source_url!).hostname } catch { return m.source_url } })() : null
-
-  return (
-    <>
-      <tr
-        className={`border-b border-border cursor-pointer transition-colors ${isExpanded ? 'bg-surface/80' : 'hover:bg-surface/50'}`}
-        onClick={onToggle}
-      >
-        <td className="px-4 py-3 w-4">
-          <span className={`text-[10px] font-mono text-text-muted transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>›</span>
-        </td>
-        <td className="px-4 py-3"><SevBadge s={m.severity} /></td>
-        <td className="px-4 py-3 max-w-xs">
-          <div className="flex items-center gap-2">
-            <a
-              href={m.source_url || '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="text-xs font-mono text-text-primary truncate hover:text-blue-400 hover:underline"
-              title={`Open thread: ${m.title}`}
-            >
-              {m.title || '(no title)'}
-            </a>
-            {m.source_url && (
-              <a
-                href={m.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                className="text-[10px] font-mono text-blue-400 hover:underline shrink-0"
-                title="Open forum thread"
-              >
-                ↗
-              </a>
-            )}
-          </div>
-          {m.snippet && <div className="text-[10px] text-text-muted mt-0.5 line-clamp-1">{m.snippet}</div>}
-        </td>
-        <td className="px-4 py-3 text-[10px] font-mono text-text-muted">{m.keyword_matched}</td>
-        <td className="px-4 py-3 text-[10px] font-mono text-text-muted whitespace-nowrap">
-          {m.feed_posted_at
-            ? new Date(m.feed_posted_at).toLocaleDateString()
-            : new Date(m.discovered_at).toLocaleDateString()}
-        </td>
-        <td className="px-4 py-3">
-          {m.source_url ? (
-            <a
-              href={m.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              title={m.source_url}
-              className="inline-flex items-center gap-1 text-[10px] font-mono text-accent-green hover:underline whitespace-nowrap"
-            >
-              {domain}
-              <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          ) : (
-            <span className="text-[10px] font-mono text-text-muted">—</span>
-          )}
-        </td>
-        <td className="px-4 py-3">
-          {m.is_reviewed
-            ? <span className="text-[10px] font-mono text-accent-green">✓ reviewed</span>
-            : <span className="text-[10px] font-mono text-yellow-600">pending</span>}
-        </td>
-      </tr>
-      {isExpanded && (
-        <tr className="border-b border-border bg-surface/40">
-          <td colSpan={7} className="px-6 py-4">
-            <div className="space-y-4 max-w-3xl">
-
-              {/* AI Analysis block */}
-              {m.raw_data?.ai_analysis && (
-                <div className="border border-blue-900 bg-blue-950/30 rounded-lg p-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-blue-400 uppercase tracking-widest">AI Analysis</span>
-                    <span className="text-[10px] font-mono text-blue-600">
-                      {Math.round(m.raw_data.ai_analysis.confidence * 100)}% confidence
-                    </span>
-                  </div>
-                  {m.raw_data.ai_analysis.summary && (
-                    <p className="text-xs font-mono text-text-primary leading-relaxed">
-                      {m.raw_data.ai_analysis.summary}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-3 text-[10px] font-mono">
-                    {m.raw_data.ai_analysis.record_count && (
-                      <span className="text-orange-400">
-                        Records: {m.raw_data.ai_analysis.record_count}
-                      </span>
-                    )}
-                    {m.raw_data.ai_analysis.data_types.length > 0 && (
-                      <span className="text-text-muted">
-                        Data: {m.raw_data.ai_analysis.data_types.join(', ')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {m.snippet && (
-                <div>
-                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Forum Snippet</div>
-                  <div className="text-xs font-mono text-text-primary leading-relaxed whitespace-pre-wrap">{m.snippet}</div>
-                </div>
-              )}
-              {m.threat_actor && (
-                <div className="text-[10px] font-mono text-orange-400">Threat actor: {m.threat_actor}</div>
-              )}
-              {m.feed_posted_at && (
-                <div className="text-[10px] font-mono text-text-muted">Thread posted: {new Date(m.feed_posted_at).toLocaleString()}</div>
-              )}
-              {m.source_url && (
-                <div className="flex justify-end">
-                  <a
-                    href={m.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
-                    className="inline-flex items-center gap-2 text-xs font-mono px-4 py-2 rounded bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/20 transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                    Open Thread on Forum
-                  </a>
-                </div>
-              )}
-              <div>
-                <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Analyst Notes</div>
-                <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  onClick={e => e.stopPropagation()}
-                  rows={2}
-                  placeholder="Add notes..."
-                  className="w-full bg-background border border-border rounded px-3 py-2 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none resize-none"
-                />
-              </div>
-              <div className="flex gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                {!m.is_reviewed && (
-                  <button
-                    disabled={reviewing}
-                    onClick={() => onReview(m.id, { is_reviewed: true, analyst_notes: notes } as any)}
-                    className="text-xs font-mono px-3 py-1.5 bg-accent-green text-black rounded hover:opacity-90 disabled:opacity-40">
-                    {reviewing ? 'Saving...' : '✓ Mark Reviewed'}
-                  </button>
-                )}
-                {notes !== (m.analyst_notes || '') && (
-                  <button
-                    disabled={reviewing}
-                    onClick={() => onReview(m.id, { analyst_notes: notes } as any)}
-                    className="text-xs font-mono px-3 py-1.5 border border-accent-green text-accent-green rounded hover:bg-accent-green/10 disabled:opacity-40">
-                    Save Notes
-                  </button>
-                )}
-                {!m.is_reviewed && (
-                  <button
-                    disabled={reviewing}
-                    onClick={() => onReview(m.id, { is_false_positive: true, is_reviewed: true } as any)}
-                    className="text-xs font-mono px-3 py-1.5 border border-red-800 text-red-400 rounded hover:bg-red-950 disabled:opacity-40">
-                    ✗ False Positive
-                  </button>
-                )}
-                {m.is_reviewed && (
-                  <span className="text-[10px] font-mono text-accent-green self-center">Already reviewed</span>
-                )}
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  )
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'hits' | 'credentials' | 'scans'
-
-const PAGE_LIMIT = 20
+type Tab = 'credentials' | 'scans'
 
 export default function ForumsPage() {
   const [forums, setForums] = useState<Forum[]>([])
-  const [mentions, setMentions] = useState<Mention[]>([])
-  const [mentionStats, setMentionStats] = useState<MentionStats>({ total: 0, critical_high: 0, unreviewed: 0, by_source: {} })
   const [scans, setScans] = useState<Scan[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<Tab>('hits')
-
-  // Filters
-  const [filterSeverity, setFilterSeverity] = useState('')
-  const [filterSearch, setFilterSearch] = useState('')
-  const [filterDays, setFilterDays] = useState(30)
-  const [filterSortBy, setFilterSortBy] = useState('discovered_at')
-  const [filterYear, setFilterYear] = useState(2026)
-  const [filterTitleOnly, setFilterTitleOnly] = useState(false)
-  const [page, setPage] = useState(1)
+  const [activeTab, setActiveTab] = useState<Tab>('credentials')
 
   // Modals / actions
   const [showAdd, setShowAdd] = useState(false)
   const [updatePwForum, setUpdatePwForum] = useState<Forum | null>(null)
   const [loggingIn, setLoggingIn] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [reviewingId, setReviewingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -493,23 +241,6 @@ export default function ForumsPage() {
     setForums(res.data)
   }, [])
 
-  const loadMentions = useCallback(async () => {
-    const params = new URLSearchParams({
-      days: String(filterDays),
-      page: String(page),
-      limit: String(PAGE_LIMIT),
-    })
-    if (filterSeverity) params.set('severity', filterSeverity)
-    if (filterSearch) params.set('keyword', filterSearch)
-    params.set('sort_by', filterSortBy)
-    if (filterYear) params.set('year', String(filterYear))
-    params.set('search_in', filterTitleOnly ? 'title' : 'all')
-
-    const res = await api.get(`/darkweb/forum-mentions?${params}`)
-    setMentions(res.data.mentions ?? [])
-    setMentionStats(res.data.stats ?? { total: 0, critical_high: 0, unreviewed: 0, by_source: {} })
-  }, [filterDays, page, filterSeverity, filterSearch, filterSortBy, filterYear, filterTitleOnly])
-
   const loadScans = useCallback(async () => {
     const res = await api.get('/darkweb/scans?limit=20')
     const all: Scan[] = Array.isArray(res.data) ? res.data : []
@@ -519,18 +250,13 @@ export default function ForumsPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      await Promise.allSettled([loadForums(), loadMentions(), loadScans()])
+      await Promise.allSettled([loadForums(), loadScans()])
     } finally {
       setLoading(false)
     }
-  }, [loadForums, loadMentions, loadScans])
+  }, [loadForums, loadScans])
 
   useEffect(() => { loadAll() }, [loadAll])
-
-  // Re-fetch mentions when filters/page change (without full reload)
-  useEffect(() => {
-    loadMentions()
-  }, [filterSeverity, filterSearch, filterDays, page, loadMentions])
 
   // Clean up poll on unmount
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
@@ -570,11 +296,11 @@ export default function ForumsPage() {
           const res = await api.get('/darkweb/scans?limit=5')
           const forumScans: Scan[] = (Array.isArray(res.data) ? res.data : []).filter((s: Scan) => s.scan_type === 'forums')
           const latest = forumScans[0]
-          if (latest && ['completed', 'failed'].includes(latest.status)) {
-            clearInterval(pollRef.current!)
-            setScanning(false)
-            await Promise.allSettled([loadMentions(), loadScans()])
-            if (latest.status === 'completed') {
+            if (latest && ['completed', 'failed'].includes(latest.status)) {
+              clearInterval(pollRef.current!)
+              setScanning(false)
+              await loadScans()
+              if (latest.status === 'completed') {
               showToast(true, `Scan complete — ${latest.new_mentions} new hit${latest.new_mentions !== 1 ? 's' : ''}`)
             } else {
               showToast(false, `Scan failed: ${latest.error_message || 'unknown error'}`)
@@ -588,18 +314,6 @@ export default function ForumsPage() {
     }
   }
 
-  const reviewMention = async (id: string, updates: object) => {
-    setReviewingId(id)
-    try {
-      await api.patch(`/darkweb/mentions/${id}`, updates)
-      setMentions(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m))
-      // Refresh unreviewed count
-      loadMentions()
-    } catch {
-      showToast(false, 'Failed to update mention')
-    } finally { setReviewingId(null) }
-  }
-
   const removeForum = async (forumId: string, name: string) => {
     if (!confirm(`Remove ${name}?`)) return
     try {
@@ -610,7 +324,6 @@ export default function ForumsPage() {
     }
   }
 
-  const totalPages = Math.ceil(mentionStats.total / PAGE_LIMIT)
   const authenticated = forums.filter(f => f.has_cookies && f.last_successful_login).length
   const lastScan = scans[0]
 
@@ -632,7 +345,6 @@ export default function ForumsPage() {
   }
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
-    { id: 'hits', label: 'Hits', count: mentionStats.total },
     { id: 'credentials', label: 'Forum Sources', count: forums.length },
     { id: 'scans', label: 'Scan History', count: scans.length },
   ]
@@ -644,9 +356,9 @@ export default function ForumsPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-mono text-text-primary uppercase tracking-widest">Forum Intelligence</h1>
+            <h1 className="text-lg font-mono text-text-primary uppercase tracking-widest">Forum Intel Settings</h1>
             <p className="text-xs text-text-muted mt-0.5">
-              Authenticated breach forum monitoring · scans every 30 min
+              Manage forum credentials and view scan history
             </p>
           </div>
           <div className="flex gap-2 flex-shrink-0">
@@ -699,11 +411,10 @@ export default function ForumsPage() {
         )}
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
             { label: 'Forums Active', value: `${authenticated}/${forums.length}`, sub: 'authenticated', vc: authenticated > 0 ? 'text-accent-green' : 'text-text-muted' },
-            { label: 'Total Hits', value: mentionStats.total, sub: 'all time', vc: mentionStats.total > 0 ? 'text-orange-400' : 'text-text-muted' },
-            { label: 'Unreviewed', value: mentionStats.unreviewed, sub: 'need triage', vc: mentionStats.unreviewed > 0 ? 'text-red-400' : 'text-text-muted' },
+            { label: 'Scan Schedule', value: 'Every 30min', sub: 'auto-scan enabled', vc: 'text-text-muted' },
             { label: 'Last Scan', value: lastScan ? relativeTime(lastScan.completed_at) : '—', sub: nextScanIn() ? `next in ${nextScanIn()}` : 'no scan yet', vc: lastScan?.status === 'completed' ? 'text-accent-green' : lastScan?.status === 'failed' ? 'text-red-400' : 'text-text-muted' },
           ].map(({ label, value, sub, vc }) => (
             <div key={label} className="bg-surface border border-border rounded-lg p-3">
@@ -726,145 +437,6 @@ export default function ForumsPage() {
             </button>
           ))}
         </div>
-
-        {/* ── HITS TAB ──────────────────────────────────────────────────────── */}
-        {activeTab === 'hits' && (
-          <div className="space-y-4">
-            {/* Filters */}
-            <div className="flex flex-wrap gap-2 items-center">
-              <input
-                type="text"
-                placeholder="title, org, gov.lk, srilanka..."
-                value={filterSearch}
-                onChange={e => { setFilterSearch(e.target.value); setPage(1) }}
-                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none w-56"
-              />
-              <select
-                value={filterSeverity}
-                onChange={e => { setFilterSeverity(e.target.value); setPage(1) }}
-                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none">
-                <option value="">All Severities</option>
-                <option value="CRITICAL">Critical</option>
-                <option value="HIGH">High</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="LOW">Low</option>
-              </select>
-              <select
-                value={filterDays}
-                onChange={e => { setFilterDays(Number(e.target.value)); setPage(1) }}
-                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none">
-                <option value={7}>Last 7 days</option>
-                <option value={30}>Last 30 days</option>
-                <option value={90}>Last 90 days</option>
-                <option value={365}>Last year</option>
-              </select>
-              <select
-                value={filterSortBy}
-                onChange={e => { setFilterSortBy(e.target.value); setPage(1) }}
-                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none">
-                <option value="feed_posted_at">Sort by thread date</option>
-                <option value="discovered_at">Sort by found date</option>
-              </select>
-              <select
-                value={filterYear}
-                onChange={e => { setFilterYear(Number(e.target.value)); setPage(1) }}
-                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none">
-                <option value={0}>All years</option>
-                <option value={2026}>2026 only</option>
-                <option value={2025}>2025 only</option>
-              </select>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filterTitleOnly}
-                  onChange={e => { setFilterTitleOnly(e.target.checked); setPage(1) }}
-                  className="accent-accent-green"
-                />
-                <span className="text-[10px] font-mono text-text-muted">Title only</span>
-              </label>
-              {(filterSeverity || filterSearch) && (
-                <button
-                  onClick={() => { setFilterSeverity(''); setFilterSearch(''); setPage(1) }}
-                  className="text-[10px] font-mono text-text-muted hover:text-text-primary border border-border rounded px-2 py-1.5">
-                  Clear filters
-                </button>
-              )}
-            </div>
-
-            {loading ? (
-              <div className="py-12 text-center text-xs text-text-muted font-mono">Loading...</div>
-            ) : mentions.length === 0 ? (
-              <div className="border border-dashed border-border rounded-lg py-12 text-center space-y-2">
-                <div className="text-sm font-mono text-text-muted">No forum hits yet</div>
-                <div className="text-xs text-text-muted">
-                  {forums.length === 0
-                    ? 'Configure Breached.st credentials in Forum Sources, then run a scan'
-                    : filterSeverity || filterSearch
-                      ? 'No hits match your filters — try clearing them'
-                      : 'Trigger a scan — results appear here when keyword matches are found'}
-                </div>
-                {forums.length === 0 ? (
-                  <button onClick={() => { setShowAdd(true); setActiveTab('credentials') }}
-                    className="mt-3 text-xs font-mono text-accent-green hover:underline">
-                    Add Forum Source →
-                  </button>
-                ) : !filterSeverity && !filterSearch ? (
-                  <button onClick={triggerScan} disabled={scanning}
-                    className="mt-3 text-xs font-mono text-accent-green hover:underline disabled:opacity-40">
-                    {scanning ? 'Scanning...' : 'Trigger Scan →'}
-                  </button>
-                ) : null}
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        {['', 'Severity', 'Thread / Match', 'Keyword', filterSortBy === 'feed_posted_at' ? 'Thread Date' : 'Found', 'Source', 'Status'].map(h => (
-                          <th key={h} className="text-left text-[10px] font-mono text-text-muted uppercase tracking-widest px-4 pb-2">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {mentions.map(m => (
-                        <MentionRow
-                          key={m.id}
-                          m={m}
-                          isExpanded={expandedId === m.id}
-                          onToggle={() => setExpandedId(prev => prev === m.id ? null : m.id)}
-                          onReview={reviewMention}
-                          reviewing={reviewingId === m.id}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between text-[10px] font-mono text-text-muted pt-2">
-                    <span>Page {page} of {totalPages} · {mentionStats.total} total</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page <= 1}
-                        className="px-3 py-1 border border-border rounded hover:border-text-muted disabled:opacity-30">
-                        ← Prev
-                      </button>
-                      <button
-                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                        disabled={page >= totalPages}
-                        className="px-3 py-1 border border-border rounded hover:border-text-muted disabled:opacity-30">
-                        Next →
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
 
         {/* ── CREDENTIALS TAB ───────────────────────────────────────────────── */}
         {activeTab === 'credentials' && (
