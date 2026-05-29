@@ -11,19 +11,28 @@ An all-in-one OSINT (Open Source Intelligence) dashboard for cyber operations. B
 | Module | Description | Sources |
 |--------|-------------|---------|
 | **Threat Intelligence** | IOC enrichment, feed aggregation, risk scoring | AlienVault OTX, ThreatFox, URLhaus, Shodan InternetDB, GreyNoise |
-| **Dark Web Monitor** | Keyword watchlist, breach lookup, paste monitoring | Ahmia, HaveIBeenPwned, paste sites |
+| **Dark Web Monitor** | Forum intelligence (Breached.st), ransomware tracking, breach monitoring, AI-powered analysis | Breached.st, Ransomware.live, Ahmia, HaveIBeenPwned |
 | **Cyber Surface** | Asset discovery, port/vuln scanning, CVE tracking | Shodan InternetDB, crt.sh, WHOIS, dnspython |
 | **GEOINT** | Geo-tagged threat mapping, aircraft/vessel tracking | OpenSky Network, Leaflet.js |
 | **SOCMINT** | Social media keyword monitoring, sentiment analysis | Reddit public API, VADER sentiment |
-| **News & Media** | RSS feed aggregation, keyword alerting | feedparser, configurable sources |
+| **News & Media** | RSS feed aggregation, AI-powered analysis, relevance scoring, keyword alerting | feedparser, Groq AI, configurable sources |
 | **Profile Intelligence** | Person/org profile building, link analysis | OSINT aggregation |
 | **Alerts & Reports** | Unified alert management, PDF report generation | WeasyPrint, Jinja2 |
 
 ---
 
+## Key Features
+
+- **Forum Intelligence** — Authenticated scraping of Breached.st and other forums with auto-login (MyBB, phpBB, XenForo), keyword monitoring, and deduplication
+- **AI-Powered Analysis** — Groq (Llama 3.3 70B) classifies forum posts, extracts victim/threat-actor/data-types, and filters false positives
+- **Ransomware Tracking** — Real-time victim monitoring via Ransomware.live with sector classification, data-status analysis, and analyst review workflow
+- **Encrypted Credential Storage** — Forum passwords encrypted at rest using Fernet (symmetric AES-128)
+
+---
+
 ## Tech Stack
 
-- **Backend:** Python 3.11, FastAPI (async), SQLAlchemy 2.0, Alembic, Celery + Redbeat
+- **Backend:** Python 3.11, FastAPI (async), SQLAlchemy 2.0, Alembic, Celery + Redbeat, Groq AI, Fernet encryption
 - **Frontend:** Next.js 14 App Router, TypeScript, Tailwind CSS, Recharts, Leaflet.js, Zustand
 - **Infrastructure:** PostgreSQL 16, Redis 7, Nginx, Docker Compose
 - **Auth:** JWT (access + refresh tokens), bcrypt, role-based access (admin / analyst / viewer)
@@ -115,8 +124,8 @@ nginx (8088/8443)
 └── /api      → backend (FastAPI, port 8000)
                ├── PostgreSQL (34-table schema)
                ├── Redis (cache + pub/sub + task queue)
-               ├── Celery Worker (feed/scan tasks)
-               └── Celery Beat (scheduled jobs)
+               ├── Celery Worker (feed/scan tasks, forum intelligence queue)
+               └── Celery Beat (scheduled jobs: ransomware, forum scans every 30m)
 ```
 
 ---
