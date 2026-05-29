@@ -418,9 +418,9 @@ export default function DarkWebPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
                 {[
                   ['Thread URL', selectedMention.source_url],
+                  ['Source', selectedMention.source || '-'],
+                  ['Threat Actor', selectedMention.threat_actor || '-'],
                   ['Triage', selectedMention.triage_status || 'new'],
-                  ['Reviewed', selectedMention.is_reviewed ? 'Yes' : 'No'],
-                  ['False Positive', selectedMention.is_false_positive ? 'Yes' : 'No'],
                 ].map(([label, value]) => (
                   <div key={label || ''} className="bg-background border border-border rounded p-3 min-w-0">
                     <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">{label}</div>
@@ -431,13 +431,36 @@ export default function DarkWebPage() {
                     )}
                   </div>
                 ))}
-                {selectedMention.analyst_notes && (
-                  <div className="col-span-full bg-background border border-border rounded p-3 min-w-0">
-                    <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Analyst Notes</div>
-                    <div className="text-sm font-mono text-text-primary whitespace-pre-wrap">{selectedMention.analyst_notes}</div>
-                  </div>
-                )}
               </div>
+
+              <div className="bg-background border border-border rounded p-4 mb-5">
+                <div className="flex flex-wrap gap-3 items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest">Review:</span>
+                    {selectedMention.is_reviewed ? (
+                      <span className="text-xs font-mono text-accent-green">Reviewed</span>
+                    ) : (
+                      <button onClick={async () => { try { await api.patch(`/darkweb/mentions/${selectedMention.id}`, { is_reviewed: true, triage_status: 'reviewed' }); await loadAll(); setSelectedMention(prev => prev ? { ...prev, is_reviewed: true, triage_status: 'reviewed' } : null) } catch {} }} className="px-3 py-1.5 rounded bg-accent-green text-black font-mono text-xs font-bold">Mark Reviewed</button>
+                    )}
+                    {selectedMention.is_false_positive ? (
+                      <span className="text-xs font-mono text-orange-400">False Positive</span>
+                    ) : (
+                      <button onClick={async () => { try { await api.patch(`/darkweb/mentions/${selectedMention.id}`, { is_false_positive: true, is_reviewed: true, triage_status: 'false_positive' }); await loadAll(); setSelectedMention(prev => prev ? { ...prev, is_false_positive: true, is_reviewed: true, triage_status: 'false_positive' } : null) } catch {} }} className="px-3 py-1.5 rounded border border-orange-500 text-orange-400 font-mono text-xs">False Positive</button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest">Status:</span>
+                    <span className={`text-xs font-mono ${selectedMention.triage_status === 'escalated' ? 'text-red-400' : selectedMention.triage_status === 'reviewed' ? 'text-accent-green' : selectedMention.triage_status === 'false_positive' ? 'text-orange-400' : 'text-text-muted'}`}>{selectedMention.triage_status || 'new'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {selectedMention.analyst_notes && selectedMention.analyst_notes.length > 0 && (
+                <div className="mb-5 p-4 bg-background border border-border rounded">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-2">Analyst Notes</div>
+                  <div className="text-sm font-mono text-text-primary whitespace-pre-wrap">{selectedMention.analyst_notes}</div>
+                </div>
+              )}
 
               {selectedMention.raw_data?.ai_analysis && (
                 <div className="mb-5 p-4 bg-background border border-border rounded">
@@ -495,11 +518,20 @@ export default function DarkWebPage() {
               <a href="/dark-web/forums" className="px-3 py-2 rounded border border-border text-xs font-mono text-accent-green hover:border-accent-green">Open Workspace</a>
             </div>
           </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-b border-border bg-background/40">
+            <StatCard label="Total Mentions" value={forums?.stats?.total ?? 0} sub="all time" />
+            <StatCard label="Unreviewed" value={forums?.stats?.unreviewed ?? 0} sub="needs analyst review" />
+            <StatCard label="Critical / High" value={forums?.stats?.critical_high ?? 0} sub="high priority" />
+            <StatCard label="Sources" value={Object.keys(forums?.stats?.by_source || {}).length} sub={Object.entries(forums?.stats?.by_source || {}).map(([k, v]) => `${k}: ${v}`).join(', ')} />
+          </div>
           <div className="divide-y divide-border">
             {(forums?.mentions || []).map((m: ForumMention) => (
               <div key={m.id} onClick={() => setSelectedMention(m)} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 cursor-pointer hover:bg-background/60 transition-colors">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-text-primary truncate">{m.title || 'Untitled forum mention'}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent-green" />
+                    <div className="text-sm text-text-primary truncate">{m.title || 'Untitled forum mention'}</div>
+                  </div>
                   <div className="text-xs text-text-muted font-mono mt-1 truncate">{m.source} / {m.keyword_matched || 'keyword match'} / {m.discovered_at ? new Date(m.discovered_at).toLocaleString() : '-'}</div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
@@ -511,35 +543,4 @@ export default function DarkWebPage() {
               </div>
             ))}
             {!loading && !forums?.mentions?.length && <div className="p-6 text-text-muted">No forum mentions found.</div>}
-          </div>
-        </section>}
-
-        <section className="bg-surface border border-border rounded-lg overflow-hidden">
-          <div className="p-4 border-b border-border">
-            <h2 className="font-mono text-sm font-bold tracking-widest text-accent-green">
-              RECENT {activeTab === 'ransomware' ? 'RANSOMWARE' : 'FORUM'} SCANS
-            </h2>
-          </div>
-          <div className="divide-y divide-border">
-            {scans.filter((scan) => activeTab === 'ransomware'
-              ? scan.scan_type.startsWith('ransomware')
-              : scan.scan_type === 'forums'
-            ).map((scan) => (
-              <div key={scan.id} className="p-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                <div className="font-mono text-text-primary">{scan.scan_type}</div>
-                <div className="text-text-muted">{scan.status}</div>
-                <div className="text-text-muted">Found: {scan.mentions_found ?? 0}</div>
-                <div className="text-text-muted">New: {scan.new_mentions ?? 0}</div>
-                <div className="text-text-muted font-mono text-xs">{formatColomboTime(scan.created_at)}</div>
-              </div>
-            ))}
-            {!loading && !scans.filter((scan) => activeTab === 'ransomware'
-              ? scan.scan_type.startsWith('ransomware')
-              : scan.scan_type === 'forums'
-            ).length && <div className="p-6 text-text-muted">No scans recorded.</div>}
-          </div>
-        </section>
-      </div>
-    </AppLayout>
-  )
-}
+          }
