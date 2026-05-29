@@ -11,7 +11,7 @@ An all-in-one OSINT (Open Source Intelligence) dashboard for cyber operations. B
 | Module | Description | Sources |
 |--------|-------------|---------|
 | **Threat Intelligence** | IOC enrichment, feed aggregation, risk scoring | AlienVault OTX, ThreatFox, URLhaus, Shodan InternetDB, GreyNoise |
-| **Dark Web Monitor** | Forum intelligence (Breached.st), ransomware tracking, breach monitoring, AI-powered analysis | Breached.st, Ransomware.live, Ahmia, HaveIBeenPwned |
+| **Dark Web Monitor** | Forum intelligence (darkforums.su, BreachForums), ransomware tracking, AI-powered analysis with Groq | darkforums.su, BreachForums, Ransomware.live |
 | **Cyber Surface** | Asset discovery, port/vuln scanning, CVE tracking | Shodan InternetDB, crt.sh, WHOIS, dnspython |
 | **GEOINT** | Geo-tagged threat mapping, aircraft/vessel tracking | OpenSky Network, Leaflet.js |
 | **SOCMINT** | Social media keyword monitoring, sentiment analysis | Reddit public API, VADER sentiment |
@@ -23,7 +23,7 @@ An all-in-one OSINT (Open Source Intelligence) dashboard for cyber operations. B
 
 ## Key Features
 
-- **Forum Intelligence** — Authenticated scraping of Breached.st and other forums with auto-login (MyBB, phpBB, XenForo), keyword monitoring, and deduplication
+- **Forum Intelligence** — Authenticated scraping of darkforums.su (MyBB) and BreachForums (XenForo) with auto-login, keyword monitoring (Sri Lanka–focused), deduplication, and original thread date extraction from individual thread pages
 - **AI-Powered Analysis** — Groq (Llama 3.3 70B) classifies forum posts, extracts victim/threat-actor/data-types, and filters false positives
 - **Ransomware Tracking** — Real-time victim monitoring via Ransomware.live with sector classification, data-status analysis, and analyst review workflow
 - **Encrypted Credential Storage** — Forum passwords encrypted at rest using Fernet (symmetric AES-128)
@@ -125,7 +125,7 @@ nginx (8088/8443)
                ├── PostgreSQL (34-table schema)
                ├── Redis (cache + pub/sub + task queue)
                ├── Celery Worker (feed/scan tasks, forum intelligence queue)
-               └── Celery Beat (scheduled jobs: ransomware, forum scans every 30m)
+                └── Celery Beat (scheduled jobs: ransomware, forum scans every 15m)
 ```
 
 ---
