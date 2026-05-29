@@ -469,6 +469,7 @@ export default function ForumsPage() {
   const [filterDays, setFilterDays] = useState(30)
   const [filterSortBy, setFilterSortBy] = useState('discovered_at')
   const [filterYear, setFilterYear] = useState(2026)
+  const [filterTitleOnly, setFilterTitleOnly] = useState(false)
   const [page, setPage] = useState(1)
 
   // Modals / actions
@@ -502,11 +503,12 @@ export default function ForumsPage() {
     if (filterSearch) params.set('keyword', filterSearch)
     params.set('sort_by', filterSortBy)
     if (filterYear) params.set('year', String(filterYear))
+    params.set('search_in', filterTitleOnly ? 'title' : 'all')
 
     const res = await api.get(`/darkweb/forum-mentions?${params}`)
     setMentions(res.data.mentions ?? [])
     setMentionStats(res.data.stats ?? { total: 0, critical_high: 0, unreviewed: 0, by_source: {} })
-  }, [filterDays, page, filterSeverity, filterSearch, filterSortBy, filterYear])
+  }, [filterDays, page, filterSeverity, filterSearch, filterSortBy, filterYear, filterTitleOnly])
 
   const loadScans = useCallback(async () => {
     const res = await api.get('/darkweb/scans?limit=20')
@@ -771,6 +773,15 @@ export default function ForumsPage() {
                 <option value={2026}>2026 only</option>
                 <option value={2025}>2025 only</option>
               </select>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filterTitleOnly}
+                  onChange={e => { setFilterTitleOnly(e.target.checked); setPage(1) }}
+                  className="accent-accent-green"
+                />
+                <span className="text-[10px] font-mono text-text-muted">Title only</span>
+              </label>
               {(filterSeverity || filterSearch) && (
                 <button
                   onClick={() => { setFilterSeverity(''); setFilterSearch(''); setPage(1) }}

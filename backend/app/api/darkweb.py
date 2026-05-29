@@ -393,6 +393,7 @@ async def get_forum_mentions(
     limit: int = Query(50, ge=1, le=100),
     sort_by: str = Query("discovered_at", regex="^(discovered_at|feed_posted_at)$"),
     year: Optional[int] = None,
+    search_in: str = Query("all", regex="^(all|title)$"),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -418,17 +419,20 @@ async def get_forum_mentions(
             terms.append("srilanka")
         elif kl in ("sl", "lk"):
             terms += ["sri lanka", "srilanka", ".lk"]
-        query = query.where(or_(*[
-            condition
-            for term in terms
-            for condition in (
-                DarkWebMention.keyword_matched.ilike(f"%{term}%"),
-                DarkWebMention.title.ilike(f"%{term}%"),
-                DarkWebMention.snippet.ilike(f"%{term}%"),
-                DarkWebMention.victim_org.ilike(f"%{term}%"),
-                DarkWebMention.source_url.ilike(f"%{term}%"),
-            )
-        ]))
+        conditions = [DarkWebMention.title.ilike(f"%{term}%") for term in terms]
+        if search_in == "all":
+            conditions = [
+                condition
+                for term in terms
+                for condition in (
+                    DarkWebMention.keyword_matched.ilike(f"%{term}%"),
+                    DarkWebMention.title.ilike(f"%{term}%"),
+                    DarkWebMention.snippet.ilike(f"%{term}%"),
+                    DarkWebMention.victim_org.ilike(f"%{term}%"),
+                    DarkWebMention.source_url.ilike(f"%{term}%"),
+                )
+            ]
+        query = query.where(or_(*conditions))
 
     sort_col = DarkWebMention.discovered_at if sort_by == "discovered_at" else DarkWebMention.feed_posted_at
     result = await db.execute(
