@@ -391,6 +391,8 @@ async def get_forum_mentions(
     days: int = Query(30, ge=1, le=365),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
+    sort_by: str = Query("discovered_at", regex="^(discovered_at|feed_posted_at)$"),
+    year: Optional[int] = None,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -399,6 +401,13 @@ async def get_forum_mentions(
         query = query.where(DarkWebMention.source.ilike(f"%{forum_id}%"))
     if severity:
         query = query.where(DarkWebMention.severity == severity)
+    if year:
+        query = query.where(
+            and_(
+                DarkWebMention.feed_posted_at.isnot(None),
+                func.extract("year", DarkWebMention.feed_posted_at) == year,
+            )
+        )
     if keyword:
         kw = keyword.strip()
         terms = [kw]
@@ -421,8 +430,9 @@ async def get_forum_mentions(
             )
         ]))
 
+    sort_col = DarkWebMention.discovered_at if sort_by == "discovered_at" else DarkWebMention.feed_posted_at
     result = await db.execute(
-        query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
+        query.order_by(desc(sort_col)).offset((page - 1) * limit).limit(limit)
     )
     mentions = result.scalars().all()
 
@@ -462,6 +472,7 @@ def _serialize_mention(mention: DarkWebMention):
         "triage_status": mention.triage_status,
         "analyst_notes": mention.analyst_notes,
         "discovered_at": mention.discovered_at.isoformat() if mention.discovered_at else None,
+        "feed_posted_at": mention.feed_posted_at.isoformat() if mention.feed_posted_at else None,
         "raw_data": mention.raw_data or {},
     }
 

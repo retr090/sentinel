@@ -42,6 +42,7 @@ type ForumMention = {
   severity?: string
   keyword_matched?: string
   discovered_at?: string
+  feed_posted_at?: string
   is_reviewed?: boolean
   source_url?: string
   snippet?: string
@@ -393,7 +394,7 @@ export default function DarkWebPage() {
                 <button onClick={() => setSelectedMention(null)} className="text-text-muted hover:text-text-primary text-xl">x</button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
                 <div className="bg-background border border-border rounded p-3">
                   <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Severity</div>
                   <Severity value={selectedMention.severity} />
@@ -401,6 +402,10 @@ export default function DarkWebPage() {
                 <div className="bg-background border border-border rounded p-3">
                   <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Matched By</div>
                   <div className="text-sm font-mono text-text-primary">{selectedMention.keyword_matched || '-'}</div>
+                </div>
+                <div className="bg-background border border-border rounded p-3">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Thread Date</div>
+                  <div className="text-sm font-mono text-text-primary">{selectedMention.feed_posted_at ? new Date(selectedMention.feed_posted_at).toLocaleString() : '-'}</div>
                 </div>
                 <div className="bg-background border border-border rounded p-3">
                   <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Discovered</div>
@@ -532,7 +537,7 @@ export default function DarkWebPage() {
                     <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent-green" />
                     <div className="text-sm text-text-primary truncate">{m.title || 'Untitled forum mention'}</div>
                   </div>
-                  <div className="text-xs text-text-muted font-mono mt-1 truncate">{m.source} / {m.keyword_matched || 'keyword match'} / {m.discovered_at ? new Date(m.discovered_at).toLocaleString() : '-'}</div>
+                  <div className="text-xs text-text-muted font-mono mt-1 truncate">{m.source} / {m.keyword_matched || 'keyword match'} / {m.feed_posted_at ? new Date(m.feed_posted_at).toLocaleString() : m.discovered_at ? new Date(m.discovered_at).toLocaleString() : '-'}</div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   {m.source_url && (

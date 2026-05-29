@@ -321,6 +321,27 @@ def _mybb_determine_severity(title: str, snippet: str) -> str:
     return "MEDIUM"
 
 
+def _parse_mybb_date(text: str) -> str:
+    now = datetime.utcnow()
+    text = text.strip().lower()
+    if "minute" in text or "hour" in text or "second" in text:
+        return now.isoformat()
+    if "yesterday" in text:
+        return (now - timedelta(days=1)).isoformat()
+    m = re.match(r"(\d{1,2})-(\d{1,2})-(\d{2,4}),?\s+(\d{1,2}:\d{2}\s*(?:am|pm))", text)
+    if m:
+        day, mon, yr, tm = m.groups()
+        yr = int(yr)
+        if yr < 100:
+            yr += 2000
+        try:
+            dt = datetime.strptime(f"{yr}-{mon}-{day} {tm}", "%Y-%m-%d %I:%M %p")
+            return dt.isoformat()
+        except ValueError:
+            pass
+    return now.isoformat()
+
+
 async def search_mybb_forum(
     base_url: str,
     cookies: Dict[str, str],
@@ -383,12 +404,20 @@ async def search_mybb_forum(
                         strong = item.find("strong")
                         author = strong.get_text(strip=True) if strong else ""
 
+                    cells = item.find_all("td")
+                    posted_date = ""
+                    if len(cells) >= 6:
+                        raw = cells[5].get_text(strip=True)
+                        raw = re.sub(r'\s*Last Post:.*', '', raw).strip()
+                        if raw:
+                            posted_date = _parse_mybb_date(raw)
+
                     results.append({
                         "title": title[:500],
-                        "url": thread_url[:2000],
+                        "source_url": thread_url[:2000],
                         "snippet": "",
                         "author": author,
-                        "date_posted": "",
+                        "feed_posted_at": posted_date,
                         "keyword_matched": keyword,
                         "forum_id": forum_id or "mybb_forum",
                         "forum_name": forum_name or "MyBB Forum",

@@ -42,6 +42,7 @@ interface Mention {
   is_reviewed: boolean
   analyst_notes: string | null
   discovered_at: string
+  feed_posted_at: string | null
   raw_data?: { ai_analysis?: AiAnalysis }
 }
 
@@ -309,7 +310,9 @@ const MentionRow = ({ m, isExpanded, onToggle, onReview, reviewing }: MentionRow
         </td>
         <td className="px-4 py-3 text-[10px] font-mono text-text-muted">{m.keyword_matched}</td>
         <td className="px-4 py-3 text-[10px] font-mono text-text-muted whitespace-nowrap">
-          {new Date(m.discovered_at).toLocaleDateString()}
+          {m.feed_posted_at
+            ? new Date(m.feed_posted_at).toLocaleDateString()
+            : new Date(m.discovered_at).toLocaleDateString()}
         </td>
         <td className="px-4 py-3">
           {m.source_url ? (
@@ -378,6 +381,9 @@ const MentionRow = ({ m, isExpanded, onToggle, onReview, reviewing }: MentionRow
               )}
               {m.threat_actor && (
                 <div className="text-[10px] font-mono text-orange-400">Threat actor: {m.threat_actor}</div>
+              )}
+              {m.feed_posted_at && (
+                <div className="text-[10px] font-mono text-text-muted">Thread posted: {new Date(m.feed_posted_at).toLocaleString()}</div>
               )}
               {m.source_url && (
                 <div className="flex justify-end">
@@ -461,6 +467,8 @@ export default function ForumsPage() {
   const [filterSeverity, setFilterSeverity] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
   const [filterDays, setFilterDays] = useState(30)
+  const [filterSortBy, setFilterSortBy] = useState('discovered_at')
+  const [filterYear, setFilterYear] = useState(2026)
   const [page, setPage] = useState(1)
 
   // Modals / actions
@@ -492,11 +500,13 @@ export default function ForumsPage() {
     })
     if (filterSeverity) params.set('severity', filterSeverity)
     if (filterSearch) params.set('keyword', filterSearch)
+    params.set('sort_by', filterSortBy)
+    if (filterYear) params.set('year', String(filterYear))
 
     const res = await api.get(`/darkweb/forum-mentions?${params}`)
     setMentions(res.data.mentions ?? [])
     setMentionStats(res.data.stats ?? { total: 0, critical_high: 0, unreviewed: 0, by_source: {} })
-  }, [filterDays, page, filterSeverity, filterSearch])
+  }, [filterDays, page, filterSeverity, filterSearch, filterSortBy, filterYear])
 
   const loadScans = useCallback(async () => {
     const res = await api.get('/darkweb/scans?limit=20')
@@ -746,6 +756,21 @@ export default function ForumsPage() {
                 <option value={90}>Last 90 days</option>
                 <option value={365}>Last year</option>
               </select>
+              <select
+                value={filterSortBy}
+                onChange={e => { setFilterSortBy(e.target.value); setPage(1) }}
+                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none">
+                <option value="feed_posted_at">Sort by thread date</option>
+                <option value="discovered_at">Sort by found date</option>
+              </select>
+              <select
+                value={filterYear}
+                onChange={e => { setFilterYear(Number(e.target.value)); setPage(1) }}
+                className="bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text-primary focus:border-accent-green focus:outline-none">
+                <option value={0}>All years</option>
+                <option value={2026}>2026 only</option>
+                <option value={2025}>2025 only</option>
+              </select>
               {(filterSeverity || filterSearch) && (
                 <button
                   onClick={() => { setFilterSeverity(''); setFilterSearch(''); setPage(1) }}
@@ -785,7 +810,7 @@ export default function ForumsPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border">
-                        {['', 'Severity', 'Thread / Match', 'Keyword', 'Discovered', 'Source', 'Status'].map(h => (
+                        {['', 'Severity', 'Thread / Match', 'Keyword', filterSortBy === 'feed_posted_at' ? 'Thread Date' : 'Found', 'Source', 'Status'].map(h => (
                           <th key={h} className="text-left text-[10px] font-mono text-text-muted uppercase tracking-widest px-4 pb-2">{h}</th>
                         ))}
                       </tr>
