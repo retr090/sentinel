@@ -262,7 +262,7 @@ async def _run_surface_forum_scan() -> dict:
     from app.models.darkweb import DarkWebAlert, DarkWebScan
     from app.models.forum_credentials import ForumCredential
     from app.services.darkweb.ai_analyst import enrich_results
-    from app.services.darkweb.forum_auth import ensure_valid_session
+    from app.services.darkweb.forum_auth import ensure_valid_session, search_mybb_forum
     from app.services.darkweb.sources.breached_st import run_full_scan
 
     engine, async_session = _make_session()
@@ -305,6 +305,15 @@ async def _run_surface_forum_scan() -> dict:
                     software = (forum.forum_software or "mybb").lower()
                     if software == "xenforo" or "breached" in forum.forum_id.lower():
                         matches = await run_full_scan(cookies=forum.session_cookies, keywords=FORUM_KEYWORDS)
+                        all_matches.extend([m for m in matches if not m.get("error")])
+                    elif software == "mybb":
+                        matches = await search_mybb_forum(
+                            base_url=forum.forum_url,
+                            cookies=forum.session_cookies,
+                            keywords=FORUM_KEYWORDS,
+                            forum_name=forum.forum_name,
+                            forum_id=forum.forum_id,
+                        )
                         all_matches.extend([m for m in matches if not m.get("error")])
 
                     forum.last_used = datetime.utcnow()

@@ -1,8 +1,10 @@
 import re
 import httpx
+import asyncio
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
+from urllib.parse import urlsplit
 
 from ..encryption import decrypt_password
 
@@ -14,7 +16,6 @@ BROWSER_HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Content-Type": "application/x-www-form-urlencoded",
 }
 
 
@@ -25,8 +26,9 @@ async def login_mybb(
     login_url: str = None,
 ) -> Tuple[bool, Dict[str, str], str]:
     """Login to a MyBB forum. Returns (success, cookies, error)."""
-    if not login_url:
-        login_url = f"{base_url}/member.php"
+    parsed = urlsplit(base_url)
+    domain = f"{parsed.scheme}://{parsed.netloc}"
+    member_url = f"{domain}/member.php"
 
     try:
         async with httpx.AsyncClient(
@@ -34,8 +36,7 @@ async def login_mybb(
             follow_redirects=True,
             headers=BROWSER_HEADERS,
         ) as client:
-            # Fetch login page to extract hidden fields (CSRF / my_post_key)
-            get_r = await client.get(login_url, params={"action": "login"})
+            get_r = await client.get(member_url, params={"action": "login"})
             if get_r.status_code != 200:
                 return False, {}, f"Login page returned HTTP {get_r.status_code}"
 
@@ -54,8 +55,6 @@ async def login_mybb(
                     if name:
                         hidden_fields[name] = value
 
-            initial_cookies = dict(get_r.cookies)
-
             login_data = {
                 "action": "do_login",
                 "username": username,
@@ -66,11 +65,8 @@ async def login_mybb(
             }
 
             post_r = await client.post(
-                login_url,
-                params={"action": "do_login"},
+                member_url,
                 data=login_data,
-                cookies=initial_cookies,
-                headers={**BROWSER_HEADERS, "Referer": f"{login_url}?action=login"},
             )
 
             all_cookies: Dict[str, str] = {}
@@ -82,26 +78,16 @@ async def login_mybb(
 
             failed_indicators = [
                 "incorrect username", "wrong password", "invalid username",
-                "login failed", "banned", "you have been banned",
+                "login failed", "you have been banned",
             ]
             if any(ind in page_text for ind in failed_indicators):
                 return False, {}, "Login failed — incorrect username or password"
 
-            success_indicators = [
-                "logout", "usercp.php", "welcome back",
-                "my account", "user control panel",
-            ]
-            mybb_cookies = {
-                k: v for k, v in all_cookies.items()
-                if any(x in k.lower() for x in ["mybb", "session", "user", "login", "sid", "auth"])
-            }
-
-            if any(ind in page_text for ind in success_indicators) or mybb_cookies:
+            if "mybbuser" in all_cookies:
                 print(f"MyBB login successful — {len(all_cookies)} cookies")
                 return True, all_cookies, ""
 
-            # Last resort: check usercp directly
-            verify_r = await client.get(f"{base_url}/usercp.php", cookies=all_cookies)
+            verify_r = await client.get(f"{domain}/usercp.php", cookies=all_cookies)
             if "usercp" in str(verify_r.url) and verify_r.status_code == 200:
                 return True, all_cookies, ""
 
@@ -257,17 +243,29 @@ async def auto_login_forum(
         return await login_mybb(base_url, username, password, login_url)
 
 
+async def _check_mybb_session(cookies: Dict[str, str], base_url: str) -> bool:
+    parsed = urlsplit(base_url)
+    domain = f"{parsed.scheme}://{parsed.netloc}"
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=BROWSER_HEADERS, cookies=cookies) as c:
+            r = await c.get(f"{domain}/usercp.php")
+            if r.status_code == 200 and "usercp" in str(r.url).lower():
+                return True
+    except Exception:
+        pass
+    return False
+
+
 async def ensure_valid_session(forum, db) -> Tuple[bool, str]:
-    """
-    Verify session cookies are still valid.
-    If expired and auto_login is enabled, re-authenticate.
-    Returns (is_valid, error_message).
-    """
-    from .sources.breached_st import check_session_valid
+    software = (forum.forum_software or "mybb").lower()
 
     if forum.session_cookies:
         try:
-            is_valid = await check_session_valid(forum.session_cookies)
+            if software == "xenforo" or "breached" in (forum.forum_id or "").lower():
+                from .sources.breached_st import check_session_valid
+                is_valid = await check_session_valid(forum.session_cookies)
+            else:
+                is_valid = await _check_mybb_session(forum.session_cookies, base_url=forum.forum_url)
             if is_valid:
                 return True, ""
         except Exception:
@@ -280,7 +278,6 @@ async def ensure_valid_session(forum, db) -> Tuple[bool, str]:
     if not forum.username:
         return False, "No username stored for auto-login"
 
-    # Rate-limit login attempts: 5-minute cooldown
     if forum.last_login_attempt:
         elapsed = (datetime.utcnow() - forum.last_login_attempt).total_seconds()
         if elapsed < 300:
@@ -311,3 +308,100 @@ async def ensure_valid_session(forum, db) -> Tuple[bool, str]:
     else:
         print(f"Auto-login failed for {forum.forum_name}: {error}")
         return False, error
+
+
+def _mybb_determine_severity(title: str, snippet: str) -> str:
+    text = (title + " " + snippet).lower()
+    if any(w in text for w in ("leak", "breach", "dump", "crack", "exploit", "0day", "rce")):
+        return "CRITICAL"
+    if any(w in text for w in ("database", "sql", "admin", "password", "credential", "root", "shell")):
+        return "HIGH"
+    if any(w in text for w in ("access", "bypass", "backdoor", "vuln", "inject", "xss")):
+        return "HIGH"
+    return "MEDIUM"
+
+
+async def search_mybb_forum(
+    base_url: str,
+    cookies: Dict[str, str],
+    keywords: List[str],
+    forum_name: str = "",
+    forum_id: str = "",
+) -> List[Dict]:
+    results: List[Dict] = []
+    seen_urls: set = set()
+
+    async with httpx.AsyncClient(
+        timeout=20, follow_redirects=True, headers=BROWSER_HEADERS, cookies=cookies
+    ) as client:
+        parsed = urlsplit(base_url)
+        domain = f"{parsed.scheme}://{parsed.netloc}"
+        for keyword in keywords:
+            try:
+                r = await client.post(
+                    f"{domain}/search.php",
+                    data={"keywords": keyword, "action": "do_search", "postthread": "1", "showresults": "threads", "submit": "Search"},
+                )
+                if r.status_code not in (200, 302):
+                    continue
+                if "/login" in str(r.url) or "member.php" in str(r.url):
+                    print(f"  MyBB session expired during search for '{keyword}'")
+                    return [{"error": "session_expired"}]
+
+                soup = BeautifulSoup(r.text, "html.parser")
+                threads = soup.find_all("tr", class_=re.compile(r"inline_row|trow")) or soup.find_all("li", class_=re.compile(r"topic"))
+
+                if not threads:
+                    threads = soup.select("table.forum_threads tr, .threadbit tr, .forumbit tr")
+
+                print(f"  MyBB found {len(threads)} raw items for '{keyword}'")
+
+                for item in threads[:50]:
+                    link = item.find("a", href=re.compile(r"Thread-"))
+                    if not link:
+                        continue
+
+                    title = link.get_text(strip=True)
+                    if not title:
+                        continue
+
+                    href = link.get("href", "")
+                    if not href:
+                        continue
+                    if href.startswith("http"):
+                        thread_url = href
+                    else:
+                        thread_url = f"{domain}/{href.lstrip('/')}"
+
+                    if thread_url in seen_urls:
+                        continue
+                    seen_urls.add(thread_url)
+
+                    author_el = item.find("a", href=re.compile(r"User-")) or item.find("span", class_=re.compile(r"author|username"))
+                    author = author_el.get_text(strip=True) if author_el else ""
+                    if not author:
+                        strong = item.find("strong")
+                        author = strong.get_text(strip=True) if strong else ""
+
+                    results.append({
+                        "title": title[:500],
+                        "url": thread_url[:2000],
+                        "snippet": "",
+                        "author": author,
+                        "date_posted": "",
+                        "keyword_matched": keyword,
+                        "forum_id": forum_id or "mybb_forum",
+                        "forum_name": forum_name or "MyBB Forum",
+                        "category": "Forum",
+                        "severity": _mybb_determine_severity(title, ""),
+                        "source": "forum_intelligence",
+                        "discovered_at": datetime.utcnow().isoformat(),
+                    })
+
+            except httpx.TimeoutException:
+                print(f"  MyBB search timeout for '{keyword}'")
+            except Exception as e:
+                print(f"  MyBB search error for '{keyword}': {e}")
+
+    print(f"MyBB forum search complete: {len(results)} results")
+    return results
