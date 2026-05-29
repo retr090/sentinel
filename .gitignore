@@ -27,6 +27,9 @@ frontend/.next/
 frontend/out/
 frontend/tsconfig.tsbuildinfo
 
+# Docs
+docs/
+
 # Reports
 backend/reports/
 

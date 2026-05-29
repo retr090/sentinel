@@ -173,22 +173,18 @@ async def trigger_scan(
     scan_type: str = "ransomware",
     current_user=Depends(require_analyst),
 ):
-    from app.tasks.darkweb_tasks import (
-        scan_forums,
-        scan_ransomware_historical,
-        scan_ransomware_manual,
-    )
+    from app.core.celery_app import celery_app
 
     task_map = {
-        "ransomware": (scan_ransomware_manual, "Ransomware scan started"),
-        "historical": (scan_ransomware_historical, "Historical ransomware scan started"),
-        "forums": (scan_forums, "Forum intelligence scan started"),
+        "ransomware": ("app.tasks.darkweb_tasks.scan_ransomware_manual", "Ransomware scan started"),
+        "historical": ("app.tasks.darkweb_tasks.scan_ransomware_historical", "Historical ransomware scan started"),
+        "forums": ("app.tasks.darkweb_tasks.scan_forums", "Forum intelligence scan started"),
     }
     if scan_type not in task_map:
         raise HTTPException(400, f"Unsupported scan type '{scan_type}'. Valid: {list(task_map.keys())}")
 
-    task_func, message = task_map[scan_type]
-    task = task_func.delay()
+    task_name, message = task_map[scan_type]
+    task = celery_app.send_task(task_name, queue="darkweb")
     return {"task_id": task.id, "scan_type": scan_type, "status": "queued", "message": message}
 
 
