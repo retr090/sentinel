@@ -7,28 +7,22 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Shield, Globe, Newspaper, MapPin,
   User, MessageSquare, Monitor, Bell, ChevronLeft, ChevronRight,
-  LogOut, X, Users, Search, Clock, Layers,
+  LogOut, X, Users,
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 
-const THREAT_INTEL_ITEMS = [
-  { href: '/threat-intel/lookup', label: 'IOC Lookup', icon: Search },
-  { href: '/threat-intel/history', label: 'TI History', icon: Clock },
-  { href: '/threat-intel/bulk', label: 'Bulk Lookup', icon: Layers },
-]
-
 const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  // Threat Intel group rendered inline below
-  { href: '/dark-web', label: 'Dark Web', icon: Globe },
-  { href: '/news', label: 'News Intel', icon: Newspaper },
-  { href: '/geoint', label: 'GEOINT', icon: MapPin },
-  { href: '/profiles', label: 'Profiles', icon: User },
-  { href: '/socmint', label: 'SOCMINT', icon: MessageSquare },
-  { href: '/cyber-surface', label: 'Cyber Surface', icon: Monitor },
-  { href: '/alerts', label: 'Alerts', icon: Bell },
+  { href: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
+  { href: '/socmint',      label: 'SOCMINT',      icon: MessageSquare },
+  { href: '/news',         label: 'News Intel',   icon: Newspaper },
+  { href: '/profiles',     label: 'Profiles',     icon: User },
+  { href: '/threat-intel', label: 'Threat Intel', icon: Shield },
+  { href: '/dark-web',     label: 'Dark Web Intel', icon: Globe },
+  { href: '/geoint',       label: 'GEOINT',       icon: MapPin },
+  { href: '/cyber-surface',label: 'Cyber Surface',icon: Monitor },
+  { href: '/alerts',       label: 'Alerts',       icon: Bell },
 ]
 
 export default function Sidebar({
@@ -48,8 +42,6 @@ export default function Sidebar({
     logout()
     router.push('/login')
   }
-
-  const tiActive = pathname.startsWith('/threat-intel')
 
   const linkClass = (active: boolean) => cn(
     'flex items-center gap-3 px-2 py-2 rounded text-sm transition-colors',
@@ -101,102 +93,22 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
-        {/* Dashboard */}
-        {(() => {
-          const { href, label, icon: Icon } = NAV_ITEMS[0]
-          const active = pathname === href
+        {NAV_ITEMS.map(({ href, label, icon: Icon }, idx) => {
+          const active = href === '/dashboard'
+            ? pathname === href
+            : pathname === href || pathname.startsWith(href + '/')
           return (
-            <Link key={href} href={href} onClick={onClose} className={linkClass(active)} title={label}>
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className={cn('font-medium truncate', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>{label}</span>
-            </Link>
-          )
-        })()}
-
-        {/* ─── MODULES section label ─── */}
-        <div className={cn(
-          'px-2 pt-3 pb-0.5',
-          'md:hidden',
-          collapsed ? 'lg:hidden' : 'lg:block',
-        )}>
-          <span className="text-[8px] font-mono text-text-muted/50 uppercase tracking-[0.2em] select-none">Modules</span>
-        </div>
-
-        {/* ─── Threat Intelligence Group ─── */}
-        <div className="space-y-0.5">
-          {/* Group label + collapsed icon */}
-          <div className={cn(
-            'flex items-center gap-2 px-2 py-1',
-            'md:justify-center',
-            collapsed ? 'lg:justify-center' : 'lg:justify-start',
-          )}>
-            {/* Icon (visible on tablet + desktop collapsed, acts as link) */}
-            <Link
-              href="/threat-intel/lookup"
-              onClick={onClose}
-              title="Threat Intel"
-              className={cn(
-                'hidden items-center justify-center w-4 h-4',
-                'md:flex',
-                collapsed ? 'lg:flex' : 'lg:hidden',
-                tiActive ? 'text-accent-green' : 'text-text-muted hover:text-text-primary',
+            <>
+              {idx === 1 && (
+                <div key="modules-label" className={cn('px-2 pt-3 pb-0.5', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>
+                  <span className="text-[8px] font-mono text-text-muted/50 uppercase tracking-[0.2em] select-none">Modules</span>
+                </div>
               )}
-            >
-              <Shield className="w-4 h-4 flex-shrink-0" />
-            </Link>
-
-            {/* Label (visible on mobile + desktop expanded) */}
-            <span className={cn(
-              'text-[9px] font-mono text-text-muted uppercase tracking-widest select-none',
-              'md:hidden',
-              collapsed ? 'lg:hidden' : 'lg:block',
-            )}>
-              Threat Intel
-            </span>
-          </div>
-
-          {/* Sub-items — hidden on tablet, hidden when desktop collapsed */}
-          {THREAT_INTEL_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || pathname.startsWith(href + '/')
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={onClose}
-                title={label}
-                className={cn(
-                  'flex items-center gap-3 px-2 py-1.5 rounded text-sm transition-colors',
-                  'md:hidden',
-                  collapsed ? 'lg:hidden' : 'lg:flex lg:justify-start',
-                  active
-                    ? 'bg-accent-green/10 text-accent-green border border-accent-green/20'
-                    : 'text-text-muted hover:text-text-primary hover:bg-background/50',
-                )}
-              >
-                <span className="w-4 flex-shrink-0" /> {/* indent */}
-                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="font-medium truncate text-xs">{label}</span>
+              <Link key={href} href={href} onClick={onClose} className={linkClass(active)} title={label}>
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className={cn('font-medium truncate', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>{label}</span>
               </Link>
-            )
-          })}
-        </div>
-
-        {/* Rest of nav items (dark-web onwards) */}
-        {NAV_ITEMS.slice(1).map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(href + '/')
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onClose}
-              className={linkClass(active)}
-              title={label}
-            >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className={cn('font-medium truncate', 'md:hidden', collapsed ? 'lg:hidden' : 'lg:block')}>
-                {label}
-              </span>
-            </Link>
+            </>
           )
         })}
 

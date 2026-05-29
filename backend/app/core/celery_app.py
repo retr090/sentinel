@@ -10,7 +10,6 @@ celery_app = Celery(
     backend=settings.REDIS_URL,
     include=[
         "app.tasks.threat_intel",
-        "app.tasks.dark_web",
         "app.tasks.darkweb_tasks",
         "app.tasks.news",
         "app.tasks.geoint",
@@ -24,8 +23,8 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
-    timezone="UTC",
-    enable_utc=True,
+    timezone="Asia/Colombo",
+    enable_utc=False,
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
@@ -45,14 +44,19 @@ celery_app.conf.update(
             "schedule": 86400,
             "options": {"queue": "feeds"},
         },
-        "scan-dark-web": {
-            "task": "app.tasks.dark_web.scan_watchlist",
-            "schedule": 7200,
-            "options": {"queue": "feeds"},
-        },
         "fetch-news": {
             "task": "app.tasks.news.fetch_all_news",
             "schedule": 1800,
+            "options": {"queue": "feeds"},
+        },
+        "score-news-relevance": {
+            "task": "app.tasks.news.score_news_relevance",
+            "schedule": 3600,
+            "options": {"queue": "feeds"},
+        },
+        "backfill-news-article-text": {
+            "task": "app.tasks.news.backfill_article_text",
+            "schedule": 3600,
             "options": {"queue": "feeds"},
         },
         "scan-assets": {
@@ -74,21 +78,6 @@ celery_app.conf.update(
             "task": "app.tasks.darkweb_tasks.scan_ransomware_live",
             "schedule": 900.0,
             "options": {"queue": "darkweb", "expires": 840},
-        },
-        "scan-rss-feeds": {
-            "task": "app.tasks.darkweb_tasks.scan_rss_feeds",
-            "schedule": 1800.0,
-            "options": {"queue": "darkweb", "expires": 1740},
-        },
-        "scan-paste-sites": {
-            "task": "app.tasks.darkweb_tasks.scan_paste_sites",
-            "schedule": 7200.0,
-            "options": {"queue": "darkweb", "expires": 7140},
-        },
-        "scan-dark-web-search": {
-            "task": "app.tasks.darkweb_tasks.scan_dark_web_search",
-            "schedule": 21600.0,
-            "options": {"queue": "darkweb", "expires": 21540},
         },
         "scan-forums": {
             "task": "app.tasks.darkweb_tasks.scan_forums",

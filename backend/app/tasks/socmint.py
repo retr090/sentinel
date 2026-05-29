@@ -1,6 +1,7 @@
 from celery import shared_task
 from celery.utils.log import get_task_logger
 import asyncio
+import base64
 
 logger = get_task_logger(__name__)
 
@@ -43,12 +44,15 @@ async def _scan_all_async():
         keywords = result.scalars().all()
 
         new_posts = 0
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0), headers={"User-Agent": "bot"}) as client:
+        reddit_token = None
+        headers = {"User-Agent": _reddit_user_agent()}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0), headers=headers, follow_redirects=True) as client:
+            reddit_token = await _get_reddit_token(client)
             for kw in keywords:
                 platforms = kw.platforms or ["reddit"]
 
                 if "reddit" in platforms:
-                    reddit_posts = await _fetch_reddit(client, kw.keyword)
+                    reddit_posts = await _fetch_reddit(client, kw.keyword, reddit_token)
                     for post in reddit_posts:
                         text = post.get("title", "") + " " + post.get("selftext", "")
                         sentiment = sia.polarity_scores(text)
@@ -65,12 +69,19 @@ async def _scan_all_async():
                             platform="reddit",
                             platform_post_id=str(post.get("id", "")),
                             keyword_matched=kw.keyword,
-                            content=post.get("title", "")[:2000],
+                            content=(post.get("title", "") + "\n\n" + (post.get("selftext", "") or "")).strip()[:4000],
                             url=f"https://reddit.com{post.get('permalink', '')}",
                             likes=post.get("score", 0),
                             comments=post.get("num_comments", 0),
                             sentiment_score=compound,
                             sentiment_label=label,
+                            raw_data={
+                                "subreddit": post.get("subreddit"),
+                                "author": post.get("author"),
+                                "over_18": post.get("over_18", False),
+                                "is_self": post.get("is_self", False),
+                                "source": "reddit_oauth" if reddit_token else "reddit_public_json",
+                            },
                             posted_at=datetime.fromtimestamp(post.get("created_utc", 0), tz=timezone.utc) if post.get("created_utc") else None,
                         ))
                         new_posts += 1
@@ -78,18 +89,55 @@ async def _scan_all_async():
                 kw.last_scanned = datetime.now(timezone.utc)
 
         await db.commit()
-        logger.info("SOCMINT scan complete", new_posts=new_posts)
+        logger.info(f"SOCMINT scan complete: {new_posts} new posts")
 
 
-async def _fetch_reddit(client, keyword: str) -> list:
+def _reddit_user_agent() -> str:
+    from app.core.config import settings
+    return settings.REDDIT_USER_AGENT or "SENTINEL-OSINT/1.0"
+
+
+async def _get_reddit_token(client) -> str | None:
+    from app.core.config import settings
+    if not settings.REDDIT_CLIENT_ID or not settings.REDDIT_CLIENT_SECRET:
+        return None
+
     try:
-        r = await client.get(
-            "https://www.reddit.com/search.json",
-            params={"q": keyword, "sort": "new", "limit": 25, "t": "day"},
+        raw = f"{settings.REDDIT_CLIENT_ID}:{settings.REDDIT_CLIENT_SECRET}".encode()
+        auth = base64.b64encode(raw).decode()
+        r = await client.post(
+            "https://www.reddit.com/api/v1/access_token",
+            headers={
+                "Authorization": f"Basic {auth}",
+                "User-Agent": _reddit_user_agent(),
+            },
+            data={"grant_type": "client_credentials"},
         )
+        if r.status_code == 200:
+            return r.json().get("access_token")
+        logger.warning(f"Reddit OAuth token failed: status={r.status_code} body={r.text[:200]}")
+    except Exception as e:
+        logger.warning(f"Reddit OAuth token error: {e}")
+    return None
+
+
+async def _fetch_reddit(client, keyword: str, token: str | None = None) -> list:
+    try:
+        if token:
+            r = await client.get(
+                "https://oauth.reddit.com/search",
+                headers={"Authorization": f"Bearer {token}", "User-Agent": _reddit_user_agent()},
+                params={"q": keyword, "sort": "new", "limit": 25, "t": "day", "type": "link"},
+            )
+        else:
+            r = await client.get(
+                "https://www.reddit.com/search.json",
+                params={"q": keyword, "sort": "new", "limit": 25, "t": "day"},
+            )
         if r.status_code == 200:
             data = r.json()
             return [p["data"] for p in data.get("data", {}).get("children", [])]
+        logger.warning(f"Reddit fetch non-200: keyword={keyword} status={r.status_code} body={r.text[:200]}")
     except Exception as e:
-        logger.warning("Reddit fetch failed", keyword=keyword, error=str(e))
+        logger.warning(f"Reddit fetch failed: keyword={keyword} error={e}")
     return []

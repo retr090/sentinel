@@ -1,434 +1,229 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc, and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
-from datetime import datetime, timedelta
 import uuid
+from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
-from app.models.darkweb import DarkWebKeyword, DarkWebMention, DarkWebScan, DarkWebAlert
-from app.schemas.darkweb import (
-    KeywordCreate, KeywordUpdate, KeywordResponse,
-    MentionResponse, MentionUpdate,
-    ScanResponse, BulkKeywordImport, ManualSearchRequest,
-)
-from app.services.darkweb.seed_keywords import seed_default_keywords
-from app.core.celery_app import celery_app  # noqa: F401 — ensures app context for shared_task
+from app.core.security import get_current_user, require_analyst
+from app.models.darkweb import DarkWebMention, DarkWebScan
 
-router = APIRouter(prefix="/darkweb", tags=["darkweb"])
+router = APIRouter(prefix="/darkweb", tags=["dark-web-intelligence"])
 
 
-# ─── Keywords ─────────────────────────────────────────────────────────────────
-
-@router.get("/keywords", response_model=List[KeywordResponse])
-async def get_keywords(
-    category: Optional[str] = None,
-    priority: Optional[str] = None,
-    is_active: Optional[bool] = None,
-    search: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=200),
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    query = select(DarkWebKeyword)
-    if category:
-        query = query.where(DarkWebKeyword.category == category)
-    if priority:
-        query = query.where(DarkWebKeyword.priority == priority)
-    if is_active is not None:
-        query = query.where(DarkWebKeyword.is_active == is_active)
-    if search:
-        query = query.where(DarkWebKeyword.keyword.ilike(f"%{search}%"))
-
-    query = query.order_by(
-        desc(DarkWebKeyword.priority),
-        desc(DarkWebKeyword.hit_count),
-    ).offset((page - 1) * limit).limit(limit)
-
-    result = await db.execute(query)
-    return result.scalars().all()
+FORUM_SOURCES = ["breached_st", "forum_intelligence", "breached.st"]
 
 
-@router.get("/keywords/categories")
-async def get_categories(
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(DarkWebKeyword.category, func.count(DarkWebKeyword.id).label("count"))
-        .group_by(DarkWebKeyword.category)
-        .order_by(desc("count"))
-    )
-    return [{"category": r[0], "count": r[1]} for r in result.all()]
-
-
-@router.post("/keywords/seed")
-async def seed_keywords(
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Load default Sri Lanka keyword watchlist. Only works if no keywords exist yet."""
-    count = await seed_default_keywords(db)
-    return {"seeded": count, "message": f"Added {count} default keywords"}
-
-
-@router.post("/keywords/bulk")
-async def bulk_import_keywords(
-    data: BulkKeywordImport,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    created = 0
-    skipped = 0
-    errors = []
-
-    for kw_data in data.keywords:
-        try:
-            existing = await db.execute(
-                select(DarkWebKeyword).where(DarkWebKeyword.keyword == kw_data.keyword)
-            )
-            if existing.scalar_one_or_none():
-                skipped += 1
+def _parse_ransomware_source_date(value):
+    if not value:
+        return None
+    value = str(value).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(value[:26] if "+" not in value and len(value) > 26 else value).replace(tzinfo=None)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value[:19], fmt)
+            except ValueError:
                 continue
-            kw = DarkWebKeyword(
-                id=uuid.uuid4(),
-                keyword=kw_data.keyword,
-                aliases=kw_data.aliases,
-                category=kw_data.category,
-                priority=kw_data.priority,
-                alert_mode=kw_data.alert_mode,
-                sources=kw_data.sources,
-                is_active=True,
-                hit_count=0,
-            )
-            db.add(kw)
-            created += 1
-        except Exception as e:
-            errors.append(f"{kw_data.keyword}: {str(e)}")
-
-    await db.commit()
-    return {"created": created, "skipped": skipped, "errors": errors}
+    return None
 
 
-@router.post("/keywords", response_model=KeywordResponse)
-async def create_keyword(
-    data: KeywordCreate,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    existing = await db.execute(
-        select(DarkWebKeyword).where(DarkWebKeyword.keyword == data.keyword)
+def _ransomware_feed_posted_at(mention: DarkWebMention):
+    raw = mention.raw_data if isinstance(mention.raw_data, dict) else {}
+    for key in ("published", "published_at", "posted_at", "post_date", "date", "attackdate"):
+        parsed = _parse_ransomware_source_date(raw.get(key))
+        if parsed:
+            return parsed
+    return mention.feed_posted_at or mention.published_at or mention.discovered_at
+
+
+def _forum_filter(days: Optional[int] = None):
+    filters = [
+        DarkWebMention.is_false_positive == False,
+        DarkWebMention.source.in_(FORUM_SOURCES)
+        | DarkWebMention.source.like("%forum%")
+        | DarkWebMention.source.like("%breached%"),
+    ]
+    if days is not None:
+        filters.append(DarkWebMention.discovered_at >= datetime.utcnow() - timedelta(days=days))
+    return and_(*filters)
+
+
+def _ransomware_filter():
+    return and_(
+        DarkWebMention.source == "ransomware_live",
+        DarkWebMention.keyword_matched != "global_tracker",
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(400, f"Keyword '{data.keyword}' already exists")
-
-    kw = DarkWebKeyword(
-        id=uuid.uuid4(),
-        keyword=data.keyword,
-        aliases=data.aliases,
-        category=data.category,
-        priority=data.priority,
-        alert_mode=data.alert_mode,
-        sources=data.sources,
-        notes=data.notes,
-        created_by=str(getattr(current_user, "username", current_user.id)),
-        is_active=True,
-        hit_count=0,
-    )
-    db.add(kw)
-    await db.commit()
-    await db.refresh(kw)
-    return kw
 
 
-@router.put("/keywords/{keyword_id}", response_model=KeywordResponse)
-async def update_keyword(
-    keyword_id: str,
-    data: KeywordUpdate,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(DarkWebKeyword).where(DarkWebKeyword.id == uuid.UUID(keyword_id))
-    )
-    kw = result.scalar_one_or_none()
-    if not kw:
-        raise HTTPException(404, "Keyword not found")
-
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(kw, field, value)
-
-    kw.updated_at = datetime.utcnow()
-    await db.commit()
-    await db.refresh(kw)
-    return kw
-
-
-@router.delete("/keywords/{keyword_id}")
-async def delete_keyword(
-    keyword_id: str,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(DarkWebKeyword).where(DarkWebKeyword.id == uuid.UUID(keyword_id))
-    )
-    kw = result.scalar_one_or_none()
-    if not kw:
-        raise HTTPException(404, "Keyword not found")
-    await db.delete(kw)
-    await db.commit()
-    return {"success": True}
+def _ransomware_sector(mention: DarkWebMention) -> str:
+    raw = mention.raw_data if isinstance(mention.raw_data, dict) else {}
+    text = " ".join(str(v or "") for v in (
+        mention.victim_org,
+        mention.title,
+        mention.snippet,
+        raw.get("description"),
+        raw.get("activity"),
+        raw.get("sector"),
+        raw.get("website"),
+    )).lower()
+    sector_rules = [
+        ("Government", ("gov.lk", "ministry", "department", "authority", "municipal", "provincial")),
+        ("Banking/Finance", ("bank", "finance", "insurance", "financial", "credit", "securities")),
+        ("Healthcare", ("health", "hospital", "medical", "clinic", "pharma")),
+        ("Telecom/Technology", ("telecom", "technology", "software", "it ", "internet", "network", "lankacom")),
+        ("Manufacturing", ("manufacturing", "factory", "packaging", "apparel", "holdings", "products", "food")),
+        ("Travel/Hospitality", ("travel", "tour", "hotel", "hospitality", "airline")),
+        ("Education", ("university", "college", "school", "education", "campus")),
+    ]
+    for sector, keywords in sector_rules:
+        if any(keyword in text for keyword in keywords):
+            return sector
+    return "Unknown"
 
 
-# ─── Mentions ─────────────────────────────────────────────────────────────────
-
-@router.get("/mentions", response_model=List[MentionResponse])
-async def get_mentions(
-    source: Optional[str] = None,
-    severity: Optional[str] = None,
-    keyword: Optional[str] = None,
-    is_reviewed: Optional[bool] = None,
-    is_false_positive: Optional[bool] = False,
-    days: int = Query(7, ge=1, le=90),
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    query = select(DarkWebMention).where(
-        and_(
-            DarkWebMention.discovered_at >= cutoff,
-            DarkWebMention.is_false_positive == is_false_positive,
-        )
-    )
-    if source:
-        query = query.where(DarkWebMention.source == source)
-    if severity:
-        query = query.where(DarkWebMention.severity == severity)
-    if keyword:
-        query = query.where(or_(
-            DarkWebMention.keyword_matched.ilike(f"%{keyword}%"),
-            DarkWebMention.title.ilike(f"%{keyword}%"),
-            DarkWebMention.snippet.ilike(f"%{keyword}%"),
-        ))
-    if is_reviewed is not None:
-        query = query.where(DarkWebMention.is_reviewed == is_reviewed)
-
-    query = query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
-    result = await db.execute(query)
-    return result.scalars().all()
+def _ransomware_data_status(mention: DarkWebMention) -> str:
+    raw = mention.raw_data if isinstance(mention.raw_data, dict) else {}
+    text = " ".join(str(v or "") for v in (mention.snippet, mention.full_content, raw.get("description"))).lower()
+    if any(term in text for term in ("exfiltrated data : yes", "download", "leak", "published", "dump")):
+        return "Data exposed"
+    if any(term in text for term in ("encrypted data", "claimed", "victim")):
+        return "Claimed"
+    return "Unknown"
 
 
-@router.get("/mentions/{mention_id}", response_model=MentionResponse)
-async def get_mention(
-    mention_id: str,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(DarkWebMention).where(DarkWebMention.id == uuid.UUID(mention_id))
-    )
-    mention = result.scalar_one_or_none()
-    if not mention:
-        raise HTTPException(404, "Mention not found")
-    return mention
+def _month_key(value: datetime | None) -> str:
+    return value.strftime("%Y-%m") if value else "unknown"
 
-
-@router.patch("/mentions/{mention_id}", response_model=MentionResponse)
-async def update_mention(
-    mention_id: str,
-    data: MentionUpdate,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(DarkWebMention).where(DarkWebMention.id == uuid.UUID(mention_id))
-    )
-    mention = result.scalar_one_or_none()
-    if not mention:
-        raise HTTPException(404, "Mention not found")
-
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(mention, field, value)
-
-    if data.is_reviewed:
-        mention.reviewed_by = str(getattr(current_user, "username", current_user.id))
-        mention.reviewed_at = datetime.utcnow()
-
-    await db.commit()
-    await db.refresh(mention)
-    return mention
-
-
-# ─── Stats ────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
-async def get_stats(
+async def get_leak_intel_stats(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    now = datetime.utcnow()
-    last_24h = now - timedelta(hours=24)
-    last_7d = now - timedelta(days=7)
+    since_24h = datetime.utcnow() - timedelta(hours=24)
+    ransomware = _ransomware_filter()
+    forums = _forum_filter()
 
-    total_kw = (await db.execute(select(func.count(DarkWebKeyword.id)))).scalar()
-    active_kw = (await db.execute(
-        select(func.count(DarkWebKeyword.id)).where(DarkWebKeyword.is_active == True)
-    )).scalar()
-    total_m = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(DarkWebMention.is_false_positive == False)
-    )).scalar()
-    unreviewed = (await db.execute(
+    ransomware_24h = (await db.execute(
         select(func.count(DarkWebMention.id)).where(
-            and_(DarkWebMention.is_reviewed == False, DarkWebMention.is_false_positive == False)
+            and_(ransomware, DarkWebMention.discovered_at >= since_24h)
         )
     )).scalar()
-    critical = (await db.execute(
+    forum_24h = (await db.execute(
         select(func.count(DarkWebMention.id)).where(
-            and_(DarkWebMention.severity == "CRITICAL", DarkWebMention.is_false_positive == False)
+            and_(forums, DarkWebMention.discovered_at >= since_24h)
         )
     )).scalar()
-    high = (await db.execute(
+    unreviewed_forums = (await db.execute(
         select(func.count(DarkWebMention.id)).where(
-            and_(DarkWebMention.severity == "HIGH", DarkWebMention.is_false_positive == False)
+            and_(forums, DarkWebMention.is_reviewed == False)
         )
     )).scalar()
-    m_24h = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(DarkWebMention.discovered_at >= last_24h)
+    unread_ransomware = (await db.execute(
+        select(func.count(DarkWebMention.id)).where(
+            and_(ransomware, DarkWebMention.analyst_seen_at.is_(None))
+        )
     )).scalar()
-    m_7d = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(DarkWebMention.discovered_at >= last_7d)
-    )).scalar()
-
-    last_scan_result = await db.execute(
-        select(DarkWebScan.completed_at)
-        .where(DarkWebScan.status == "completed")
-        .order_by(desc(DarkWebScan.completed_at))
-        .limit(1)
-    )
-    last_scan = last_scan_result.scalar_one_or_none()
-
-    source_counts = await db.execute(
-        select(DarkWebMention.source, func.count(DarkWebMention.id).label("count"))
-        .group_by(DarkWebMention.source)
-    )
 
     return {
-        "total_keywords": total_kw,
-        "active_keywords": active_kw,
-        "total_mentions": total_m,
-        "unreviewed_mentions": unreviewed,
-        "critical_mentions": critical,
-        "high_mentions": high,
-        "mentions_24h": m_24h,
-        "mentions_7d": m_7d,
-        "last_scan": last_scan.isoformat() if last_scan else None,
-        "sources_status": {row[0]: row[1] for row in source_counts.all()},
+        "mentions_24h": (ransomware_24h or 0) + (forum_24h or 0),
+        "ransomware_24h": ransomware_24h or 0,
+        "forum_mentions_24h": forum_24h or 0,
+        "unreviewed": (unreviewed_forums or 0) + (unread_ransomware or 0),
     }
 
 
-# ─── Scan History ─────────────────────────────────────────────────────────────
-
-@router.get("/scans", response_model=List[ScanResponse])
+@router.get("/scans")
 async def get_scans(
     limit: int = Query(20, ge=1, le=100),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(DarkWebScan).order_by(desc(DarkWebScan.created_at)).limit(limit)
+        select(DarkWebScan)
+        .where(DarkWebScan.scan_type.in_(["ransomware", "ransomware_historical", "forums"]))
+        .order_by(desc(DarkWebScan.created_at))
+        .limit(limit)
     )
-    return result.scalars().all()
+    return [
+        {
+            "id": str(scan.id),
+            "scan_type": scan.scan_type,
+            "source": scan.source,
+            "status": scan.status,
+            "keywords_scanned": scan.keywords_scanned,
+            "mentions_found": scan.mentions_found,
+            "new_mentions": scan.new_mentions,
+            "error_message": scan.error_message,
+            "started_at": scan.started_at.isoformat() if scan.started_at else None,
+            "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
+            "duration_seconds": scan.duration_seconds,
+            "created_at": scan.created_at.isoformat() if scan.created_at else None,
+        }
+        for scan in result.scalars().all()
+    ]
 
-
-# ─── Manual Search ────────────────────────────────────────────────────────────
-
-@router.post("/search")
-async def manual_search(
-    req: ManualSearchRequest,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Run a live dark web search across clearnet intelligence sources."""
-    from app.services.darkweb.search import manual_search as run_manual_search
-    from app.tasks.darkweb_tasks import _save_mention
-
-    result = await run_manual_search(query=req.query, sources=req.sources)
-
-    saved = 0
-    for r in result.get("results", []):
-        try:
-            mention_data = {
-                "keyword_matched": req.query,
-                "source": r.get("source", "manual_search"),
-                "source_url": r.get("url", ""),
-                "title": r.get("title", ""),
-                "snippet": r.get("snippet", ""),
-                "severity": "MEDIUM",
-                "category": "manual_search",
-                "raw_data": r,
-            }
-            res = await _save_mention(db=db, mention_data=mention_data)
-            if res == "new":
-                saved += 1
-        except Exception:
-            continue
-
-    result["saved_to_db"] = saved
-    return result
-
-
-# ─── Trigger Scan ─────────────────────────────────────────────────────────────
 
 @router.post("/scan/trigger")
 async def trigger_scan(
     scan_type: str = "ransomware",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_analyst),
 ):
-    """Manually trigger a scan via Celery."""
     from app.tasks.darkweb_tasks import (
-        scan_ransomware_manual,
-        scan_rss_feeds,
-        scan_paste_sites,
-        scan_dark_web_search,
-        scan_ransomware_historical,
         scan_forums,
+        scan_ransomware_historical,
+        scan_ransomware_manual,
     )
 
     task_map = {
         "ransomware": (scan_ransomware_manual, "Ransomware scan started"),
-        "rss": (scan_rss_feeds, "RSS feed scan started"),
-        "paste": (scan_paste_sites, "Paste site scan started"),
-        "search": (scan_dark_web_search, "Dark web search scan started"),
-        "historical": (scan_ransomware_historical, "Historical ransomware scan started — scanning all years for Sri Lanka victims"),
-        "forums": (scan_forums, "Forum scan started — scanning Breached.st and other configured forums"),
+        "historical": (scan_ransomware_historical, "Historical ransomware scan started"),
+        "forums": (scan_forums, "Forum intelligence scan started"),
     }
-
     if scan_type not in task_map:
-        raise HTTPException(
-            400,
-            f"Unknown scan type '{scan_type}'. Valid: {list(task_map.keys())}",
-        )
+        raise HTTPException(400, f"Unsupported scan type '{scan_type}'. Valid: {list(task_map.keys())}")
 
     task_func, message = task_map[scan_type]
     task = task_func.delay()
-    return {
-        "task_id": task.id,
-        "scan_type": scan_type,
-        "status": "queued",
-        "message": message,
-    }
+    return {"task_id": task.id, "scan_type": scan_type, "status": "queued", "message": message}
 
 
-# ─── Ransomware Tracker ────────────────────────────────────────────────────────
+@router.patch("/mentions/{mention_id}")
+async def update_mention(
+    mention_id: str,
+    updates: dict,
+    current_user=Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(DarkWebMention).where(DarkWebMention.id == uuid.UUID(mention_id)))
+    mention = result.scalar_one_or_none()
+    if not mention:
+        raise HTTPException(404, "Mention not found")
+
+    allowed = {"is_reviewed", "is_false_positive", "triage_status", "analyst_notes"}
+    for field, value in updates.items():
+        if field in allowed:
+            setattr(mention, field, value)
+    if updates.get("is_reviewed") or updates.get("is_false_positive"):
+        mention.reviewed_by = str(getattr(current_user, "username", current_user.id))
+        mention.reviewed_at = datetime.utcnow()
+    if updates.get("triage_status") == "false_positive":
+        mention.is_false_positive = True
+    if updates.get("is_false_positive"):
+        mention.triage_status = "false_positive"
+
+    await db.commit()
+    await db.refresh(mention)
+    return _serialize_mention(mention)
+
 
 @router.get("/ransomware/victims")
 async def get_ransomware_victims(
-    days: int = Query(30, ge=1, le=365),
+    days: int = Query(30, ge=0, le=3650),
     country: Optional[str] = None,
     group: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -436,51 +231,38 @@ async def get_ransomware_victims(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    sl_base = and_(
-        DarkWebMention.source == "ransomware_live",
-        DarkWebMention.keyword_matched != "global_tracker",
-        DarkWebMention.discovered_at >= cutoff,
+    posted_at_expr = func.coalesce(
+        DarkWebMention.feed_posted_at,
+        DarkWebMention.published_at,
+        DarkWebMention.discovered_at,
     )
-    query = select(DarkWebMention).where(sl_base)
+    filters = [_ransomware_filter()]
+    if days > 0:
+        filters.append(posted_at_expr >= datetime.utcnow() - timedelta(days=days))
+    query = select(DarkWebMention).where(and_(*filters))
     if country:
         query = query.where(DarkWebMention.victim_country.ilike(f"%{country}%"))
     if group:
         query = query.where(DarkWebMention.threat_actor.ilike(f"%{group}%"))
 
-    query = query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
-    result = await db.execute(query)
+    result = await db.execute(
+        query.order_by(desc(posted_at_expr), desc(DarkWebMention.discovered_at))
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     victims = result.scalars().all()
 
     group_stats = await db.execute(
         select(DarkWebMention.threat_actor, func.count(DarkWebMention.id).label("count"))
-        .where(sl_base)
+        .where(and_(*filters))
         .group_by(DarkWebMention.threat_actor)
         .order_by(desc("count"))
         .limit(10)
     )
 
     return {
-        "victims": [
-            {
-                "id": str(v.id),
-                "threat_actor": v.threat_actor,
-                "victim_org": v.victim_org,
-                "victim_country": v.victim_country,
-                "severity": v.severity,
-                "title": v.title,
-                "snippet": v.snippet,
-                "source_url": v.source_url,
-                "keyword_matched": v.keyword_matched,
-                "discovered_at": v.discovered_at.isoformat(),
-                "published_at": v.published_at.isoformat() if v.published_at else None,
-            }
-            for v in victims
-        ],
-        "top_groups": [
-            {"group": row[0], "count": row[1]}
-            for row in group_stats.all()
-        ],
+        "victims": [_serialize_ransomware_victim(v) for v in victims],
+        "top_groups": [{"group": row[0], "count": row[1]} for row in group_stats.all()],
         "total": len(victims),
     }
 
@@ -492,68 +274,117 @@ async def get_ransomware_stats(
 ):
     last_7d = datetime.utcnow() - timedelta(days=7)
     last_30d = datetime.utcnow() - timedelta(days=30)
-
-    sl_filter = and_(
-        DarkWebMention.source == "ransomware_live",
-        DarkWebMention.keyword_matched != "global_tracker",
+    posted_at_expr = func.coalesce(
+        DarkWebMention.feed_posted_at,
+        DarkWebMention.published_at,
+        DarkWebMention.discovered_at,
     )
+    ransomware = _ransomware_filter()
 
-    total_sl = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(sl_filter)
-    )).scalar()
-
-    recent_7d = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(
-            and_(sl_filter, DarkWebMention.discovered_at >= last_7d)
-        )
-    )).scalar()
-
-    recent_30d = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(
-            and_(sl_filter, DarkWebMention.discovered_at >= last_30d)
-        )
-    )).scalar()
-
-    critical_high = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(
-            and_(sl_filter, DarkWebMention.severity.in_(["CRITICAL", "HIGH"]))
-        )
-    )).scalar()
+    total = (await db.execute(select(func.count(DarkWebMention.id)).where(ransomware))).scalar()
+    unread = (await db.execute(select(func.count(DarkWebMention.id)).where(and_(ransomware, DarkWebMention.analyst_seen_at.is_(None))))).scalar()
+    recent_7d = (await db.execute(select(func.count(DarkWebMention.id)).where(and_(ransomware, posted_at_expr >= last_7d)))).scalar()
+    recent_30d = (await db.execute(select(func.count(DarkWebMention.id)).where(and_(ransomware, posted_at_expr >= last_30d)))).scalar()
+    critical_high = (await db.execute(select(func.count(DarkWebMention.id)).where(and_(ransomware, DarkWebMention.severity.in_(["CRITICAL", "HIGH"]))))).scalar()
 
     top_groups = await db.execute(
         select(DarkWebMention.threat_actor, func.count(DarkWebMention.id).label("count"))
-        .where(and_(sl_filter, DarkWebMention.discovered_at >= last_30d))
+        .where(and_(ransomware, posted_at_expr >= last_30d))
         .group_by(DarkWebMention.threat_actor)
         .order_by(desc("count"))
         .limit(10)
     )
-
-    latest_result = await db.execute(
-        select(DarkWebMention)
-        .where(sl_filter)
-        .order_by(desc(DarkWebMention.discovered_at))
-        .limit(1)
-    )
-    latest = latest_result.scalar_one_or_none()
+    latest = (await db.execute(
+        select(DarkWebMention).where(ransomware).order_by(desc(posted_at_expr), desc(DarkWebMention.discovered_at)).limit(1)
+    )).scalar_one_or_none()
 
     return {
-        "total_sl_victims": total_sl,
-        "victims_last_7d": recent_7d,
-        "victims_last_30d": recent_30d,
-        "critical_high_hits": critical_high,
+        "total_victims": total or 0,
+        "unread_ransomware_count": unread or 0,
+        "last_7_days": recent_7d or 0,
+        "last_30_days": recent_30d or 0,
+        "critical_high": critical_high or 0,
+        "total_sl_victims": total or 0,
+        "victims_last_7d": recent_7d or 0,
+        "victims_last_30d": recent_30d or 0,
+        "critical_high_hits": critical_high or 0,
         "top_groups": [{"group": r[0], "count": r[1]} for r in top_groups.all()],
         "latest_victim": {
             "org": latest.victim_org,
             "country": latest.victim_country,
             "group": latest.threat_actor,
-            "date": latest.discovered_at.isoformat(),
+            "date": _ransomware_feed_posted_at(latest).isoformat(),
         } if latest else None,
     }
 
 
-# ─── Forum Intelligence ───────────────────────────────────────────────────────
+@router.get("/ransomware/summary")
+async def get_ransomware_summary(
+    days: int = Query(365, ge=0, le=3650),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    posted_at_expr = func.coalesce(
+        DarkWebMention.feed_posted_at,
+        DarkWebMention.published_at,
+        DarkWebMention.discovered_at,
+    )
+    filters = [_ransomware_filter()]
+    if days > 0:
+        filters.append(posted_at_expr >= datetime.utcnow() - timedelta(days=days))
+    result = await db.execute(select(DarkWebMention).where(and_(*filters)))
+    rows = result.scalars().all()
 
-FORUM_SOURCES = ["breached_st", "forum_intelligence", "breached.st"]
+    sectors: dict[str, int] = {}
+    statuses: dict[str, int] = {}
+    timeline: dict[str, int] = {}
+    groups: dict[str, dict] = {}
+    for row in rows:
+        sector = _ransomware_sector(row)
+        status = _ransomware_data_status(row)
+        posted_at = _ransomware_feed_posted_at(row)
+        group = row.threat_actor or "Unknown"
+        sectors[sector] = sectors.get(sector, 0) + 1
+        statuses[status] = statuses.get(status, 0) + 1
+        timeline[_month_key(posted_at)] = timeline.get(_month_key(posted_at), 0) + 1
+        group_row = groups.setdefault(group, {"group": group, "victims": 0, "critical_high": 0, "latest_seen": None})
+        group_row["victims"] += 1
+        if row.severity in ("CRITICAL", "HIGH"):
+            group_row["critical_high"] += 1
+        if posted_at and (group_row["latest_seen"] is None or posted_at > group_row["latest_seen"]):
+            group_row["latest_seen"] = posted_at
+
+    return {
+        "total": len(rows),
+        "by_sector": [{"sector": k, "count": v} for k, v in sorted(sectors.items(), key=lambda item: item[1], reverse=True)],
+        "by_data_status": [{"status": k, "count": v} for k, v in sorted(statuses.items(), key=lambda item: item[1], reverse=True)],
+        "timeline": [{"month": k, "count": v} for k, v in sorted(timeline.items())],
+        "groups": [
+            {**g, "latest_seen": g["latest_seen"].isoformat() if g["latest_seen"] else None}
+            for g in sorted(groups.values(), key=lambda item: item["victims"], reverse=True)
+        ],
+    }
+
+
+@router.patch("/ransomware/victims/{victim_id}/seen")
+async def mark_ransomware_victim_seen(
+    victim_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DarkWebMention).where(
+            and_(DarkWebMention.id == uuid.UUID(victim_id), _ransomware_filter())
+        )
+    )
+    victim = result.scalar_one_or_none()
+    if not victim:
+        raise HTTPException(404, "Ransomware victim not found")
+    if victim.analyst_seen_at is None:
+        victim.analyst_seen_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(victim)
+    return {"id": str(victim.id), "analyst_seen_at": victim.analyst_seen_at.isoformat() if victim.analyst_seen_at else None}
 
 
 @router.get("/forum-mentions")
@@ -567,26 +398,12 @@ async def get_forum_mentions(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """All mentions from authenticated forum sources (Breached.st etc.)."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
-
-    # Match any source containing "forum" OR any known forum source name
-    forum_filter = and_(
-        DarkWebMention.discovered_at >= cutoff,
-        DarkWebMention.is_false_positive == False,
-        DarkWebMention.source.in_(FORUM_SOURCES)
-        | DarkWebMention.source.like("%forum%")
-        | DarkWebMention.source.like("%breached%"),
-    )
-
-    query = select(DarkWebMention).where(forum_filter)
-
+    query = select(DarkWebMention).where(_forum_filter(days))
     if forum_id:
         query = query.where(DarkWebMention.source.ilike(f"%{forum_id}%"))
     if severity:
         query = query.where(DarkWebMention.severity == severity)
     if keyword:
-        # Normalise common Sri Lanka aliases so either spelling finds the same data
         kw = keyword.strip()
         terms = [kw]
         kl = kw.lower()
@@ -596,71 +413,87 @@ async def get_forum_mentions(
             terms.append("srilanka")
         elif kl in ("sl", "lk"):
             terms += ["sri lanka", "srilanka", ".lk"]
+        query = query.where(or_(*[
+            condition
+            for term in terms
+            for condition in (
+                DarkWebMention.keyword_matched.ilike(f"%{term}%"),
+                DarkWebMention.title.ilike(f"%{term}%"),
+                DarkWebMention.snippet.ilike(f"%{term}%"),
+                DarkWebMention.victim_org.ilike(f"%{term}%"),
+                DarkWebMention.source_url.ilike(f"%{term}%"),
+            )
+        ]))
 
-        conditions = []
-        for t in terms:
-            conditions += [
-                DarkWebMention.keyword_matched.ilike(f"%{t}%"),
-                DarkWebMention.title.ilike(f"%{t}%"),
-                DarkWebMention.snippet.ilike(f"%{t}%"),
-                DarkWebMention.victim_org.ilike(f"%{t}%"),
-                DarkWebMention.source_url.ilike(f"%{t}%"),
-            ]
-        query = query.where(or_(*conditions))
-
-    query = query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
-
-    result = await db.execute(query)
+    result = await db.execute(
+        query.order_by(desc(DarkWebMention.discovered_at)).offset((page - 1) * limit).limit(limit)
+    )
     mentions = result.scalars().all()
 
-    # Aggregate stats across all-time (not capped by days filter)
-    all_forum = and_(
-        DarkWebMention.is_false_positive == False,
-        DarkWebMention.source.in_(FORUM_SOURCES)
-        | DarkWebMention.source.like("%forum%")
-        | DarkWebMention.source.like("%breached%"),
-    )
-    total = (await db.execute(select(func.count(DarkWebMention.id)).where(all_forum))).scalar()
-    critical_high = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(
-            and_(all_forum, DarkWebMention.severity.in_(["CRITICAL", "HIGH"]))
-        )
-    )).scalar()
-    unreviewed = (await db.execute(
-        select(func.count(DarkWebMention.id)).where(
-            and_(all_forum, DarkWebMention.is_reviewed == False)
-        )
-    )).scalar()
-
-    # Per-source breakdown for the period
+    total = (await db.execute(select(func.count(DarkWebMention.id)).where(_forum_filter()))).scalar()
+    critical_high = (await db.execute(select(func.count(DarkWebMention.id)).where(and_(_forum_filter(), DarkWebMention.severity.in_(["CRITICAL", "HIGH"]))))).scalar()
+    unreviewed = (await db.execute(select(func.count(DarkWebMention.id)).where(and_(_forum_filter(), DarkWebMention.is_reviewed == False)))).scalar()
     src_counts = await db.execute(
         select(DarkWebMention.source, func.count(DarkWebMention.id).label("c"))
-        .where(forum_filter)
+        .where(_forum_filter(days))
         .group_by(DarkWebMention.source)
     )
 
     return {
-        "mentions": [
-            {
-                "id": str(m.id),
-                "title": m.title,
-                "snippet": m.snippet,
-                "source": m.source,
-                "source_url": m.source_url,
-                "severity": m.severity,
-                "keyword_matched": m.keyword_matched,
-                "threat_actor": m.threat_actor,
-                "is_reviewed": m.is_reviewed,
-                "analyst_notes": m.analyst_notes,
-                "discovered_at": m.discovered_at.isoformat(),
-                "raw_data": m.raw_data or {},
-            }
-            for m in mentions
-        ],
+        "mentions": [_serialize_mention(m) for m in mentions],
         "stats": {
-            "total": total,
-            "critical_high": critical_high,
-            "unreviewed": unreviewed,
+            "total": total or 0,
+            "critical_high": critical_high or 0,
+            "unreviewed": unreviewed or 0,
             "by_source": {row[0]: row[1] for row in src_counts.all()},
         },
+    }
+
+
+def _serialize_mention(mention: DarkWebMention):
+    return {
+        "id": str(mention.id),
+        "title": mention.title,
+        "snippet": mention.snippet,
+        "source": mention.source,
+        "source_url": mention.source_url,
+        "severity": mention.severity,
+        "keyword_matched": mention.keyword_matched,
+        "threat_actor": mention.threat_actor,
+        "victim_org": mention.victim_org,
+        "is_reviewed": mention.is_reviewed,
+        "is_false_positive": mention.is_false_positive,
+        "triage_status": mention.triage_status,
+        "analyst_notes": mention.analyst_notes,
+        "discovered_at": mention.discovered_at.isoformat() if mention.discovered_at else None,
+        "raw_data": mention.raw_data or {},
+    }
+
+
+def _serialize_ransomware_victim(victim: DarkWebMention):
+    posted_at = _ransomware_feed_posted_at(victim)
+    return {
+        "id": str(victim.id),
+        "threat_actor": victim.threat_actor,
+        "victim_org": victim.victim_org,
+        "victim_country": victim.victim_country,
+        "severity": victim.severity,
+        "sector": _ransomware_sector(victim),
+        "data_status": _ransomware_data_status(victim),
+        "triage_status": victim.triage_status,
+        "is_reviewed": victim.is_reviewed,
+        "is_false_positive": victim.is_false_positive,
+        "analyst_notes": victim.analyst_notes,
+        "title": victim.title,
+        "snippet": victim.snippet,
+        "source_url": victim.source_url,
+        "keyword_matched": victim.keyword_matched,
+        "raw_data": victim.raw_data or {},
+        "analyst_seen_at": victim.analyst_seen_at.isoformat() if victim.analyst_seen_at else None,
+        "feed_posted_at": posted_at.isoformat() if posted_at else None,
+        "posted_at": posted_at.isoformat() if posted_at else None,
+        "collected_at": victim.discovered_at.isoformat() if victim.discovered_at else None,
+        "ingested_at": victim.discovered_at.isoformat() if victim.discovered_at else None,
+        "discovered_at": posted_at.isoformat() if posted_at else None,
+        "published_at": victim.published_at.isoformat() if victim.published_at else None,
     }

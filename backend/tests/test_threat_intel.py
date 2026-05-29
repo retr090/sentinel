@@ -16,8 +16,8 @@ def test_detect_ioc_type_domain():
 
 
 def test_detect_ioc_type_hash():
-    assert detect_ioc_type("d41d8cd98f00b204e9800998ecf8427e") == "hash"
-    assert detect_ioc_type("aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd") == "hash"
+    assert detect_ioc_type("d41d8cd98f00b204e9800998ecf8427e") == "hash_md5"
+    assert detect_ioc_type("aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd") == "hash_sha256"
 
 
 def test_detect_ioc_type_url():
@@ -30,7 +30,9 @@ def test_detect_ioc_type_email():
 
 
 def test_calculate_risk_score_empty():
-    assert calculate_risk_score({}) == 0.0
+    score, level = calculate_risk_score({})
+    assert score == 0.0
+    assert level == "clean"
 
 
 def test_calculate_risk_score_malicious():
@@ -38,8 +40,9 @@ def test_calculate_risk_score_malicious():
         "greynoise": {"classification": "malicious", "noise": True},
         "alienvault": {"pulse_info": {"count": 5}},
     }
-    score = calculate_risk_score(enrichments)
+    score, level = calculate_risk_score(enrichments)
     assert score > 0
+    assert level in {"low", "medium", "high", "critical"}
 
 
 def test_calculate_risk_score_clean():
@@ -48,8 +51,9 @@ def test_calculate_risk_score_clean():
         "alienvault": {"pulse_info": {"count": 0}},
         "shodan": {"ports": [80, 443]},
     }
-    score = calculate_risk_score(enrichments)
+    score, level = calculate_risk_score(enrichments)
     assert score >= 0
+    assert level in {"clean", "low", "medium", "high", "critical"}
 
 
 @pytest.mark.asyncio

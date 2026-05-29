@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.threat_intel import IOC, FeedItem
-from app.models.dark_web import DarkWebMention
+from app.models.darkweb import DarkWebMention
 from app.models.news import NewsArticle
 from app.models.alerts import Alert
 from app.models.cyber_surface import MonitoredAsset, AssetVulnerability
@@ -39,7 +39,7 @@ async def get_dashboard_summary(
 
     # Module stats
     iocs_24h = await count(IOC, IOC.created_at >= since_24h)
-    dark_web_24h = await count(DarkWebMention, DarkWebMention.found_at >= since_24h)
+    dark_web_24h = await count(DarkWebMention, DarkWebMention.discovered_at >= since_24h)
     news_24h = await count(NewsArticle, NewsArticle.created_at >= since_24h)
     social_24h = await count(SocialPost, SocialPost.created_at >= since_24h)
     assets_monitored = await count(MonitoredAsset, MonitoredAsset.is_active == True)

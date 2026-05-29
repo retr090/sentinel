@@ -26,6 +26,7 @@ class NewsArticle(Base):
     title = Column(String(1024), nullable=False)
     url = Column(String(2048), unique=True)
     content_snippet = Column(Text)
+    full_text = Column(Text, nullable=True)
     author = Column(String(256))
     category = Column(String(64), index=True)
     sentiment_score = Column(Float)  # -1 to 1
@@ -35,6 +36,9 @@ class NewsArticle(Base):
     geo_tags = Column(JSON, default=list)
     raw_data = Column(JSON, default=dict)
     is_archived = Column(Boolean, default=False)
+    relevance_score = Column(Float, nullable=True)
+    relevance_label = Column(String(16), nullable=True)  # high, medium, low, irrelevant
+    ai_analysis = Column(JSON, nullable=True)
     published_at = Column(DateTime(timezone=True), index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

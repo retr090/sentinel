@@ -10,7 +10,7 @@ from app.core.database import init_db
 from app.core.redis import close_redis, get_redis
 from app.core.websocket import manager, redis_subscriber
 
-from app.api import auth, threat_intel, dark_web, news, geoint, profiles, socmint, cyber_surface, alerts, dashboard, users, admin_users
+from app.api import auth, threat_intel, news, geoint, profiles, socmint, cyber_surface, alerts, dashboard, users, admin_users
 from app.api import darkweb
 from app.api import forum_credentials
 
@@ -61,7 +61,6 @@ for router in [
     users.router,
     admin_users.router,
     threat_intel.router,
-    dark_web.router,
     news.router,
     geoint.router,
     profiles.router,
@@ -89,6 +88,11 @@ async def health():
         "version": settings.APP_VERSION,
         "redis": "ok" if redis_ok else "error",
     }
+
+
+@app.get("/api/health")
+async def api_health():
+    return await health()
 
 
 @app.websocket("/ws/{channel}")

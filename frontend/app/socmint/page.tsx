@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import AppLayout from '@/components/layout/AppLayout'
 import api from '@/lib/api'
-import { MessageSquare, Plus, RefreshCw } from 'lucide-react'
+import { ExternalLink, MessageSquare, Plus, RefreshCw } from 'lucide-react'
 import { formatRelativeTime, cn } from '@/lib/utils'
 
 const SENTIMENT_COLORS: Record<string, string> = {
@@ -40,7 +40,7 @@ export default function SocmintPage() {
     e.preventDefault()
     if (!newKeyword.trim()) return
     try {
-      await api.post('/socmint/keywords', { keyword: newKeyword, platforms: ['reddit', 'youtube'] })
+      await api.post('/socmint/keywords', { keyword: newKeyword, platforms: ['reddit'] })
       setNewKeyword(''); setShowAdd(false)
       fetchData()
     } catch {}
@@ -54,7 +54,7 @@ export default function SocmintPage() {
             <h1 className="text-lg font-bold flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-warning" /> Social Media Intelligence
             </h1>
-            <p className="text-xs text-text-muted mt-0.5">Monitor public social media for intelligence signals</p>
+            <p className="text-xs text-text-muted mt-0.5">Monitor Reddit public posts for intelligence signals</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => api.post('/socmint/scan-now').catch(() => {})}
@@ -126,6 +126,12 @@ export default function SocmintPage() {
                       {post.keyword_matched && (
                         <code className="text-[10px] font-mono text-warning bg-warning/10 px-1 rounded">{post.keyword_matched}</code>
                       )}
+                      {post.raw_data?.subreddit && (
+                        <span className="text-[10px] font-mono text-accent-blue">r/{post.raw_data.subreddit}</span>
+                      )}
+                      {post.raw_data?.author && (
+                        <span className="text-[10px] font-mono text-text-muted">u/{post.raw_data.author}</span>
+                      )}
                       {post.sentiment_label && (
                         <span className={cn('text-[10px] font-mono', SENTIMENT_COLORS[post.sentiment_label] || 'text-text-muted')}>
                           {post.sentiment_label}
@@ -133,10 +139,15 @@ export default function SocmintPage() {
                       )}
                       <span className="text-[10px] text-text-muted ml-auto font-mono">{formatRelativeTime(post.posted_at)}</span>
                     </div>
-                    <p className="text-sm text-text-primary line-clamp-3">{post.content}</p>
-                    <div className="flex gap-3 mt-1.5 text-[10px] text-text-muted font-mono">
+                    <p className="text-sm text-text-primary whitespace-pre-line line-clamp-4">{post.content}</p>
+                    <div className="flex items-center gap-3 mt-1.5 text-[10px] text-text-muted font-mono">
                       <span>👍 {post.likes}</span>
                       <span>💬 {post.comments}</span>
+                      {post.url && (
+                        <a href={post.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-blue hover:text-accent-blue/80">
+                          Open <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>

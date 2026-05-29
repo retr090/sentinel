@@ -89,7 +89,7 @@ export default function DashboardPage() {
         {/* Module stats */}
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <StatCard title="IOCs Last 24h" value={data?.modules.threat_intel.iocs_24h} icon={Shield} color="accent-blue" />
-          <StatCard title="Dark Web Mentions" value={data?.modules.dark_web.mentions_24h} subtitle="last 24h" icon={Globe} color="danger" />
+          <StatCard title="Dark Web Intel Mentions" value={data?.modules.dark_web.mentions_24h} subtitle="last 24h" icon={Globe} color="danger" />
           <StatCard title="News Articles" value={data?.modules.news.articles_24h} subtitle="last 24h" icon={Newspaper} color="accent-green" />
           <StatCard title="Social Posts" value={data?.modules.socmint.posts_24h} subtitle="last 24h" icon={MessageSquare} color="warning" />
           <StatCard title="Assets Monitored" value={data?.modules.cyber_surface.assets} icon={Monitor} color="accent-blue" />
@@ -141,7 +141,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { name: 'Threat Intel', active: true },
-              { name: 'Dark Web', active: true },
+              { name: 'Dark Web Intel', active: true },
               { name: 'News Intel', active: true },
               { name: 'GEOINT', active: true },
               { name: 'Profiles', active: true },

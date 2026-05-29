@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.core.security import get_current_user, require_analyst
@@ -32,6 +32,7 @@ class PostOut(BaseModel):
     comments: int
     sentiment_score: Optional[float]
     sentiment_label: Optional[str]
+    raw_data: Optional[Dict[str, Any]] = None
     posted_at: Optional[datetime]
     created_at: datetime
 
@@ -95,6 +96,16 @@ async def trigger_scan():
     from app.tasks.socmint import scan_all_keywords
     scan_all_keywords.delay()
     return {"message": "SOCMINT scan triggered"}
+
+
+@router.get("/reddit/status")
+async def reddit_status(current_user: User = Depends(get_current_user)):
+    from app.core.config import settings
+    return {
+        "configured": bool(settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET),
+        "user_agent": settings.REDDIT_USER_AGENT,
+        "fallback": "public_json",
+    }
 
 
 @router.get("/stats")

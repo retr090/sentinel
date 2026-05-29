@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     CENSYS_API_SECRET: str = ""
     INTELX_API_KEY: str = ""
     YOUTUBE_API_KEY: str = ""
+    REDDIT_CLIENT_ID: str = ""
+    REDDIT_CLIENT_SECRET: str = ""
+    REDDIT_USER_AGENT: str = "SENTINEL-OSINT/1.0"
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
@@ -71,6 +74,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "allow"
 
 
 @lru_cache()

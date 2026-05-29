@@ -133,7 +133,6 @@ async def _archive_old_data_async():
     from app.core.database import AsyncSessionLocal
     from app.core.config import settings
     from app.models.threat_intel import IOC, FeedItem
-    from app.models.dark_web import DarkWebMention
     from app.models.news import NewsArticle
     from app.models.alerts import Alert
     from sqlalchemy import update
@@ -142,7 +141,7 @@ async def _archive_old_data_async():
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.DATA_RETENTION_DAYS)
 
     async with AsyncSessionLocal() as db:
-        for model in (FeedItem, DarkWebMention, NewsArticle):
+        for model in (FeedItem, NewsArticle):
             await db.execute(
                 update(model).where(model.created_at < cutoff, model.is_archived == False).values(is_archived=True)
             )

@@ -874,7 +874,7 @@ export default function ForumsPage() {
           <div>
             {scans.length === 0 ? (
               <div className="border border-dashed border-border rounded-lg py-12 text-center text-xs text-text-muted font-mono">
-                No forum scans yet. Trigger one using "Scan Now" or wait for the 30-minute schedule.
+                No forum scans yet. Trigger one using &quot;Scan Now&quot; or wait for the 30-minute schedule.
               </div>
             ) : (
               <div className="overflow-x-auto">
