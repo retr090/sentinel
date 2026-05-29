@@ -281,7 +281,30 @@ const MentionRow = ({ m, isExpanded, onToggle, onReview, reviewing }: MentionRow
         </td>
         <td className="px-4 py-3"><SevBadge s={m.severity} /></td>
         <td className="px-4 py-3 max-w-xs">
-          <div className="text-xs font-mono text-text-primary truncate" title={m.title}>{m.title || '(no title)'}</div>
+          <div className="flex items-center gap-2">
+            <a
+              href={m.source_url || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="text-xs font-mono text-text-primary truncate hover:text-blue-400 hover:underline"
+              title={`Open thread: ${m.title}`}
+            >
+              {m.title || '(no title)'}
+            </a>
+            {m.source_url && (
+              <a
+                href={m.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="text-[10px] font-mono text-blue-400 hover:underline shrink-0"
+                title="Open forum thread"
+              >
+                ↗
+              </a>
+            )}
+          </div>
           {m.snippet && <div className="text-[10px] text-text-muted mt-0.5 line-clamp-1">{m.snippet}</div>}
         </td>
         <td className="px-4 py-3 text-[10px] font-mono text-text-muted">{m.keyword_matched}</td>
@@ -357,19 +380,18 @@ const MentionRow = ({ m, isExpanded, onToggle, onReview, reviewing }: MentionRow
                 <div className="text-[10px] font-mono text-orange-400">Threat actor: {m.threat_actor}</div>
               )}
               {m.source_url && (
-                <div>
-                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest mb-1">Forum Thread</div>
+                <div className="flex justify-end">
                   <a
                     href={m.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()}
-                    className="inline-flex items-center gap-1.5 text-xs font-mono text-accent-green hover:underline break-all"
+                    className="inline-flex items-center gap-2 text-xs font-mono px-4 py-2 rounded bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/20 transition-colors"
                   >
-                    {m.source_url}
-                    <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
+                    Open Thread on Forum
                   </a>
                 </div>
               )}
