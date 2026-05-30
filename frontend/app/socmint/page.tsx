@@ -89,7 +89,7 @@ export default function SocmintPage() {
               <h3 className="text-sm font-semibold mb-3 font-mono">ADD SOCIAL KEYWORD</h3>
               <div className="space-y-3">
                 <input type="text" value={newKeyword} onChange={e => setNewKeyword(e.target.value)}
-                  className="sentinel-input" placeholder="e.g. Sri Lanka Air Force, SLAF" autoFocus
+                  className="sentinel-input" placeholder="e.g. cyber security, ransomware" autoFocus
                   autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
                   data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"
                   onKeyDown={(e) => { if (e.key === 'Enter') addKeyword({ preventDefault: () => {} } as React.FormEvent) }} />

@@ -137,7 +137,7 @@ export default function LoginPage() {
         </div>
 
         <div className="mt-4 text-center text-xs text-text-muted/40 font-mono">
-          SENTINEL v1.0.0 | SLAF CYBER OPERATIONS CENTRE
+          SENTINEL v1.0.0 | CYBER OPERATIONS CENTRE
         </div>
       </div>
     </div>
