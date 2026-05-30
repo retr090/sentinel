@@ -118,14 +118,90 @@ docker compose logs -f celery_worker
 
 ## Architecture
 
+### System Overview
+
 ```
-nginx (8088/8443)
-├── /         → frontend (Next.js, port 3000)
-└── /api      → backend (FastAPI, port 8000)
-               ├── PostgreSQL (34-table schema)
-               ├── Redis (cache + pub/sub + task queue)
-               ├── Celery Worker (feed/scan tasks, forum intelligence queue)
-                └── Celery Beat (scheduled jobs: ransomware, forum scans every 15m)
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Browser    │────▶│  Nginx:8088  │────▶│  Frontend    │
+│              │     │  (reverse    │     │  Next.js:3000│
+└─────────────┘     │   proxy)     │     └──────────────┘
+                    │              │
+                    │              │────▶┌──────────────┐
+                    │              │     │  Backend     │
+                    └──────────────┘     │  FastAPI:8000│
+                                         └──────┬───────┘
+                                                │
+                          ┌─────────────────────┼─────────────────────┐
+                          │                     │                     │
+                    ┌─────▼─────┐         ┌─────▼─────┐         ┌─────▼─────┐
+                    │ PostgreSQL │         │   Redis   │         │  Celery   │
+                    │   :5432    │         │   :6379   │         │  Worker   │
+                    └───────────┘         └───────────┘         └───────────┘
+                                                 │
+                                          ┌──────▼──────┐
+                                          │ Celery Beat │
+                                          │ (scheduler) │
+                                          └─────────────┘
+```
+
+### Container Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| `nginx` | 8088, 8443 | Reverse proxy, rate limiting, security headers |
+| `frontend` | 3000 | Next.js 14 App Router UI |
+| `backend` | 8000 | FastAPI REST API + WebSocket |
+| `celery_worker` | — | Background task execution (5 queues) |
+| `celery_beat` | — | Task scheduling (RedBeat) |
+| `postgres` | 5432 | Primary database (34 tables) |
+| `redis` | 6379 | Cache, pub/sub, Celery broker |
+
+### Data Flow
+
+```
+User Request → Nginx → Frontend/API
+                         │
+                         ├──▶ PostgreSQL (persistent data)
+                         ├──▶ Redis (cache + pub/sub)
+                         └──▶ Celery Worker (background jobs)
+                                   │
+                                   ├── Threat feed fetching
+                                   ├── Ransomware monitoring (RSS)
+                                   ├── Forum intelligence scanning
+                                   ├── Social media monitoring
+                                   ├── News aggregation
+                                   └── Alert processing
+```
+
+### Scheduled Tasks (Celery Beat)
+
+| Task | Interval | Queue |
+|------|----------|-------|
+| Ransomware scan | 15 min | darkweb |
+| Forum scan | 15 min | darkweb |
+| SOCMINT scan | 30 min | feeds |
+| News fetch | 30 min | feeds |
+| Threat feed refresh | 1 hour | feeds |
+| News AI scoring | 1 hour | feeds |
+| Alert processing | 5 min | alerts |
+| Asset scanning | 24 hours | scans |
+| Data archival | 24 hours | alerts |
+
+### API Structure
+
+```
+/api
+├── /auth           JWT login, refresh, user management
+├── /threat-intel   IOC lookup, enrichment, bulk import
+├── /darkweb        Ransomware victims, forum mentions
+├── /socmint        Social media posts, keywords, alerts
+├── /news           Articles, sources, trending keywords
+├── /cyber-surface  Asset monitoring, vulnerabilities
+├── /geoint         Map items, areas of interest, flights
+├── /profiles       Intelligence profiles, notes
+├── /alerts         Unified alerts, reports
+├── /dashboard      Summary stats, search
+└── /admin/users    User administration
 ```
 
 ---
