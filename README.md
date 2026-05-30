@@ -2,7 +2,7 @@
 
 An all-in-one OSINT (Open Source Intelligence) dashboard for cyber operations. Built for self-hosted deployment on low-resource infrastructure using entirely free and open data sources.
 
-![Stack](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat&logo=fastapi) ![Stack](https://img.shields.io/badge/Next.js-14-black?style=flat&logo=next.js) ![Stack](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat&logo=postgresql) ![Stack](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis) ![Stack](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker) [![Donate with PayPal](https://img.shields.io/badge/Support-PayPal-00457C?style=flat&logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/Z7LZRCU5SNNXQ)
+![Stack](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat&logo=fastapi) ![Stack](https://img.shields.io/badge/Next.js-14-black?style=flat&logo=next.js) ![Stack](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat&logo=postgresql) ![Stack](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis) ![Stack](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker) [![Donate with PayPal](https://img.shields.io/badge/Support-PayPal-00457C?style=flat&logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/XZSN9W6FV9SEC)
 
 ---
 
