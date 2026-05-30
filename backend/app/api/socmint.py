@@ -16,9 +16,17 @@ router = APIRouter(prefix="/socmint", tags=["socmint"])
 
 class SocialKeywordCreate(BaseModel):
     keyword: str
-    platforms: Optional[List[str]] = ["reddit", "youtube"]
+    platforms: Optional[List[str]] = ["reddit"]
     alert_on_spike: bool = True
     spike_threshold: int = 50
+
+
+class SocialKeywordUpdate(BaseModel):
+    keyword: Optional[str] = None
+    platforms: Optional[List[str]] = None
+    alert_on_spike: Optional[bool] = None
+    spike_threshold: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class PostOut(BaseModel):
@@ -68,6 +76,45 @@ async def delete_keyword(kw_id: int, db: AsyncSession = Depends(get_db)):
     return {"message": "Deleted"}
 
 
+@router.patch("/keywords/{kw_id}", dependencies=[Depends(require_analyst)])
+async def update_keyword(kw_id: int, body: SocialKeywordUpdate, db: AsyncSession = Depends(get_db)):
+    kw = (await db.execute(select(SocialKeyword).where(SocialKeyword.id == kw_id))).scalar_one_or_none()
+    if not kw:
+        raise HTTPException(status_code=404, detail="Not found")
+    updates = body.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(kw, field, value)
+    await db.flush()
+    await db.refresh(kw)
+    return kw
+
+
+@router.get("/alerts")
+async def list_alerts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    acknowledged: Optional[bool] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(SocialAlert)
+    if acknowledged is not None:
+        query = query.where(SocialAlert.is_acknowledged == acknowledged)
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
+    query = query.order_by(SocialAlert.triggered_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    items = (await db.execute(query)).scalars().all()
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": math.ceil(total / page_size)}
+
+
+@router.post("/alerts/{alert_id}/acknowledge", dependencies=[Depends(require_analyst)])
+async def acknowledge_alert(alert_id: int, db: AsyncSession = Depends(get_db)):
+    alert = (await db.execute(select(SocialAlert).where(SocialAlert.id == alert_id))).scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Not found")
+    alert.is_acknowledged = True
+    return {"message": "Acknowledged"}
+
+
 @router.get("/posts", response_model=PaginatedResponse[PostOut])
 async def list_posts(
     page: int = Query(1, ge=1),
@@ -93,8 +140,8 @@ async def list_posts(
 
 @router.post("/scan-now", dependencies=[Depends(require_analyst)])
 async def trigger_scan():
-    from app.tasks.socmint import scan_all_keywords
-    scan_all_keywords.delay()
+    from app.core.celery_app import celery_app
+    celery_app.send_task("app.tasks.socmint.scan_all_keywords", queue="feeds")
     return {"message": "SOCMINT scan triggered"}
 
 

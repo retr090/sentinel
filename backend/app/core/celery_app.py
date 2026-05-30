@@ -84,5 +84,10 @@ celery_app.conf.update(
             "schedule": 900.0,
             "options": {"queue": "darkweb", "expires": 840},
         },
+        "scan-socmint": {
+            "task": "app.tasks.socmint.scan_all_keywords",
+            "schedule": 1800,
+            "options": {"queue": "feeds"},
+        },
     },
 )
