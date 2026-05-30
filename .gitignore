@@ -37,6 +37,9 @@ backend/reports/
 postgres_data/
 redis_data/
 
+# AI context
+AGENTS.md
+
 # Misc
 *.log
 .DS_Store
